@@ -1,0 +1,168 @@
+// ===========================================================================
+// EssayMentor AI — Prisma Schema (v5.22.0, MySQL)
+// ===========================================================================
+// Skema database untuk platform evaluasi esai beasiswa berbasis AI.
+// Terdiri dari 3 model inti: User, EssayDraft, dan AiFeedback.
+//
+// Catatan penting untuk MySQL:
+// - Prisma 5.22.0 sepenuhnya mendukung MySQL 8.0+ sebagai datasource.
+// - Tipe `@db.Text` digunakan untuk kolom teks panjang (esai/feedback).
+// - Tipe `@db.Json` digunakan untuk menyimpan data terstruktur dari AI.
+// - Relasi menggunakan foreign key constraint bawaan InnoDB.
+// ===========================================================================
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ===========================================================================
+// ENUMERATIONS
+// ===========================================================================
+
+/// Status lifecycle sebuah draft esai.
+///   DRAFT       – masih ditulis/diedit oleh mahasiswa.
+///   IN_REVIEW   – sedang dianalisis oleh AI atau direview mentor.
+///   FINALIZED   – esai dikunci, siap disubmit ke beasiswa.
+enum DraftStatus {
+  DRAFT
+  IN_REVIEW
+  FINALIZED
+}
+
+/// Jenis feedback yang dihasilkan oleh AI engine.
+///   PARAGRAPH    – evaluasi satu paragraf individual.
+///   FULL_ESSAY   – evaluasi keseluruhan esai (koherensi lintas paragraf).
+///   TONE_CHECK   – analisis nada/gaya tulisan secara spesifik.
+///   FINAL_REVIEW – review akhir sebelum mahasiswa men-submit esai.
+enum FeedbackType {
+  PARAGRAPH
+  FULL_ESSAY
+  TONE_CHECK
+  FINAL_REVIEW
+}
+
+// ===========================================================================
+// MODEL: User
+// ===========================================================================
+/// Representasi pengguna platform (mahasiswa).
+///
+/// Kolom `passwordHash` menyimpan bcrypt hash — BUKAN password plaintext.
+/// Kolom `writingStyleFingerprint` (opsional) menyimpan JSON metadata gaya
+/// tulisan yang dihitung dari esai-esai sebelumnya. Data ini digunakan oleh
+/// prompt engine untuk mempertahankan personal voice mahasiswa.
+
+model User {
+  id                      String    @id @default(cuid())
+  email                   String    @unique
+  fullName                String    @map("full_name")
+  passwordHash            String    @map("password_hash")
+  university              String?
+  major                   String?
+  graduationYear          Int?      @map("graduation_year")
+  writingStyleFingerprint Json?     @map("writing_style_fingerprint") @db.Json
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  // === Relations ===
+  essayDrafts EssayDraft[]
+
+  // === Indexes ===
+  @@index([email])
+  @@map("users")
+}
+
+// ===========================================================================
+// MODEL: EssayDraft
+// ===========================================================================
+/// Menyimpan satu versi draft esai beasiswa milik seorang User.
+///
+/// Desain kunci:
+/// - `content` (@db.LongText) menyimpan teks ASLI mahasiswa secara utuh,
+///   tanpa modifikasi apapun dari AI. Ini adalah single source of truth
+///   untuk konten esai.
+/// - Skor per dimensi (structure, tone, relevance, originality, impact)
+///   di-cache di level draft agar query dashboard cepat. Nilai ini
+///   di-recalculate setiap kali AiFeedback baru masuk.
+/// - `version` mendukung iterative drafting: mahasiswa bisa membuat
+///   versi baru esai sambil mempertahankan versi lama untuk perbandingan.
+
+model EssayDraft {
+  id                String      @id @default(cuid())
+  userId            String      @map("user_id")
+  title             String      @default("Esai Tanpa Judul")
+  scholarshipTarget String?     @map("scholarship_target")
+  content           String      @db.LongText
+  status            DraftStatus @default(DRAFT)
+  version           Int         @default(1)
+
+  // Skor evaluasi (di-cache dari AiFeedback terakhir)
+  compositeScore    Float?      @map("composite_score")
+  structureScore    Float?      @map("structure_score")
+  toneScore         Float?      @map("tone_score")
+  relevanceScore    Float?      @map("relevance_score")
+  originalityScore  Float?      @map("originality_score")
+  impactScore       Float?      @map("impact_score")
+
+  totalWordCount    Int         @default(0) @map("total_word_count")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // === Relations ===
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiFeedbacks AiFeedback[]
+
+  // === Indexes ===
+  @@index([userId])
+  @@index([userId, status])
+  @@index([createdAt])
+  @@map("essay_drafts")
+}
+
+// ===========================================================================
+// MODEL: AiFeedback
+// ===========================================================================
+/// Menyimpan SATU respons evaluasi dari Gemini API untuk sebuah EssayDraft.
+///
+/// Desain kunci:
+/// - `scores` (JSON) berisi skor per dimensi dari AI, contoh:
+///     { "structure": 72, "tone": 85, "relevance": 68,
+///       "originality": 91, "impact": 77 }
+/// - `annotations` (JSON) berisi array anotasi per kalimat, contoh:
+///     [{ "sentenceIndex": 0, "type": "STRENGTH", "color": "green",
+///        "message": "Opening kuat..." }]
+/// - `overallComment` berisi rangkuman evaluasi naratif dari AI.
+/// - `rawPrompt` & `rawResponse` menyimpan data mentah untuk debugging
+///   dan audit (hanya diisi di environment development).
+/// - `promptTokens` & `responseTokens` digunakan untuk cost monitoring
+///   terhadap kuota Gemini API.
+
+model AiFeedback {
+  id               String       @id @default(cuid())
+  draftId          String       @map("draft_id")
+  feedbackType     FeedbackType @map("feedback_type")
+  scores           Json         @db.Json
+  annotations      Json         @db.Json
+  overallComment   String       @db.Text @map("overall_comment")
+  voicePreserved   Boolean      @default(true) @map("voice_preserved")
+  modelVersion     String       @default("llama-3.3-70b-versatile") @map("model_version")
+  promptTokens     Int          @default(0) @map("prompt_tokens")
+  responseTokens   Int          @default(0) @map("response_tokens")
+  processingTimeMs Int          @default(0) @map("processing_time_ms")
+  rawPrompt        String?      @db.LongText @map("raw_prompt")
+  rawResponse      String?      @db.LongText @map("raw_response")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  // === Relations ===
+  draft EssayDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
+
+  // === Indexes ===
+  @@index([draftId])
+  @@index([feedbackType])
+  @@index([createdAt])
+  @@map("ai_feedbacks")
+}
