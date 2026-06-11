@@ -321,25 +321,24 @@ export class EssayService {
   // ═══════════════════════════════════════════════════════════════════════
 
   private parseAiResponse(rawText: string): AiEvaluationResponse {
-    // Bersihkan kemungkinan markdown fence yang dibungkus AI
+    // Bersihkan kemungkinan markdown fence yang dibungkus AI atau teks tambahan di awal/akhir
     let cleanText = rawText.trim();
-    if (cleanText.startsWith('```json')) {
-      cleanText = cleanText.slice(7);
-    } else if (cleanText.startsWith('```')) {
-      cleanText = cleanText.slice(3);
+    const firstBrace = cleanText.indexOf('{');
+    const lastBrace = cleanText.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+      cleanText = cleanText.slice(firstBrace, lastBrace + 1);
     }
-    if (cleanText.endsWith('```')) {
-      cleanText = cleanText.slice(0, -3);
-    }
-    cleanText = cleanText.trim();
-
+    
     // Parse JSON
     let parsed: AiEvaluationResponse;
     try {
       parsed = JSON.parse(cleanText) as AiEvaluationResponse;
-    } catch {
-      this.logger.error(`AI mengembalikan JSON tidak valid: ${cleanText.substring(0, 300)}...`);
-      throw new Error('Respons AI bukan JSON valid.');
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Gagal JSON.parse: ${errMsg}`);
+      this.logger.error(`Teks JSON (potongan): ${cleanText.substring(0, 1000)}...`);
+      throw new Error(`Respons AI bukan JSON valid: ${errMsg}`);
     }
 
     // Validasi field wajib
