@@ -29,13 +29,13 @@ export default function HomePage() {
             {t.home.tag}
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-slate-100 leading-[1.15] mb-6">
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground leading-[1.15] mb-6">
             {t.home.title1}
             <br />
             <span className="gradient-text">{t.home.title2}</span>
           </h1>
 
-          <p className="mx-auto max-w-2xl text-lg sm:text-xl text-slate-400 leading-relaxed mb-10">
+          <p className="mx-auto max-w-2xl text-lg sm:text-xl text-slate-600 dark:text-slate-400 leading-relaxed mb-10">
             {t.home.subtitle}
           </p>
 
@@ -48,7 +48,7 @@ export default function HomePage() {
             </Link>
             <Link
               href="/scholarships"
-              className="rounded-xl border border-border px-8 py-3.5 text-base font-medium text-slate-300 hover:bg-card-hover hover:text-slate-100 transition-all"
+              className="rounded-xl border border-border px-8 py-3.5 text-base font-medium text-foreground hover:bg-card-hover transition-all"
             >
               {t.home.browseSch}
             </Link>
@@ -56,7 +56,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══ FEATURES ═══ */}
+      {/* Features */}
       <section className="mx-auto max-w-6xl px-4 sm:px-6 py-16 sm:py-24">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 stagger-children">
           {FEATURES.map((f) => (
@@ -67,10 +67,10 @@ export default function HomePage() {
               <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-500/10 text-2xl">
                 {f.icon}
               </span>
-              <h3 className="text-base font-semibold text-slate-100 mb-2">
+              <h3 className="text-base font-semibold text-foreground mb-2">
                 {f.title}
               </h3>
-              <p className="text-sm text-slate-400 leading-relaxed">
+              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                 {f.desc}
               </p>
             </div>
@@ -78,13 +78,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══ HOW IT WORKS ═══ */}
+      {/* How it works */}
       <section className="mx-auto max-w-6xl px-4 sm:px-6 py-16 sm:py-24">
         <div className="text-center mb-14">
-          <h2 className="text-3xl sm:text-4xl font-bold text-slate-100 mb-4">
+          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
             {t.home.howItWorks}
           </h2>
-          <p className="text-lg text-slate-400">
+          <p className="text-lg text-slate-600 dark:text-slate-400">
             {t.home.howItWorksSub}
           </p>
         </div>
@@ -95,16 +95,16 @@ export default function HomePage() {
               key={step.num}
               className="glass glass-hover rounded-2xl p-8 text-center relative overflow-hidden"
             >
-              <span className="absolute top-4 right-4 text-5xl font-black text-white/[0.03]">
+              <span className="absolute top-4 right-4 text-5xl font-black text-foreground/5">
                 {step.num}
               </span>
-              <span className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-500/10 text-3xl">
+              <span className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-500/10 text-3xl">
                 {step.icon}
               </span>
-              <h3 className="text-lg font-semibold text-slate-100 mb-3">
+              <h3 className="text-lg font-semibold text-foreground mb-2">
                 {step.title}
               </h3>
-              <p className="text-sm text-slate-400 leading-relaxed">
+              <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                 {step.desc}
               </p>
             </div>

@@ -57,10 +57,10 @@ export default function ScholarshipsPage() {
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-16 sm:py-24">
       {/* Header */}
       <div className="text-center mb-14 animate-fade-in-up">
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-100 mb-4">
+        <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
           Supported Scholarships
         </h1>
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+        <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
           EssayMentor AI memberikan feedback yang disesuaikan dengan kriteria
           evaluasi spesifik dari setiap program beasiswa berikut.
         </p>
@@ -76,14 +76,14 @@ export default function ScholarshipsPage() {
             <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl">{s.flag}</span>
               <div>
-                <h3 className="text-base font-semibold text-slate-100">
+                <h3 className="text-base font-semibold text-foreground">
                   {s.name}
                 </h3>
                 <p className="text-xs text-slate-500">{s.region}</p>
               </div>
             </div>
 
-            <p className="text-sm text-slate-400 leading-relaxed mb-5 flex-1">
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-5 flex-1">
               {s.desc}
             </p>
 
@@ -91,7 +91,7 @@ export default function ScholarshipsPage() {
               {s.focus.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-primary-500/10 border border-primary-500/20 px-2.5 py-1 text-[11px] font-medium text-primary-300"
+                  className="rounded-full bg-primary-500/10 border border-primary-500/20 px-2.5 py-1 text-[11px] font-medium text-primary-700 dark:text-primary-300"
                 >
                   {tag}
                 </span>
@@ -100,10 +100,9 @@ export default function ScholarshipsPage() {
 
             <Link
               href="/evaluator"
-              className="text-sm font-medium text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center gap-1"
+              className="text-sm font-medium text-primary-600 dark:text-primary-400 hover:underline transition-colors inline-flex items-center"
             >
               Evaluate for this scholarship
-              <span className="text-xs">→</span>
             </Link>
           </div>
         ))}

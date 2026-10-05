@@ -46,3 +46,16 @@ backend/projekai/prisma/migrations/sqlite/
 *.pem
 *.sqlite
 *.sqlite3
+
+# ==============================================================================
+# Internal Documentation & Confidential Notes
+# ==============================================================================
+INTERNAL_SYSTEM_ARCHITECTURE.md
+laporan*.md
+laporan_dokumentasi_prompting.md
+laporanprompting.md
+scratch/
+test_*.js
+test_*.mjs
+test_*.cjs
+

@@ -5,7 +5,7 @@ const TIPS = [
     icon: "🏗️",
     title: "Bangun Struktur Narasi yang Kuat",
     content:
-      "Gunakan narrative arc yang jelas: pembuka yang menggugah, pengembangan kronologis atau tematik, dan penutup yang menghubungkan kembali ke tujuan beasiswa. Hindari 'daftar prestasi' — ceritakan perjalanan, bukan resume.",
+      "Gunakan narrative arc yang jelas: pembuka yang menggugah, pengembangan kronologis atau tematik, dan penutup yang menghubungkan kembali ke tujuan beasiswa. Hindari 'daftar prestasi', ceritakan perjalanan personal Anda.",
     tag: "Struktur",
   },
   {
@@ -17,7 +17,7 @@ const TIPS = [
   },
   {
     icon: "✨",
-    title: "Jaga Orisinalitas — Hindari Klise",
+    title: "Jaga Orisinalitas: Hindari Klise",
     content:
       'Kalimat seperti "Sejak kecil saya bermimpi..." atau "Saya ingin berkontribusi untuk bangsa" terlalu umum. Ganti dengan momen spesifik yang hanya Anda yang bisa ceritakan. Detail sensorik membuat esai Anda memorable.',
     tag: "Orisinalitas",
@@ -33,7 +33,7 @@ const TIPS = [
     icon: "💥",
     title: "Akhiri dengan Dampak yang Kuat",
     content:
-      "Penutup Anda harus meninggalkan kesan yang tak terlupakan. Hubungkan pengalaman personal Anda dengan visi masa depan — apa yang akan Anda lakukan dengan ilmu yang didapat? Buat pembaca merasa berinvestasi pada kesuksesan Anda.",
+      "Penutup Anda harus meninggalkan kesan yang tak terlupakan. Hubungkan pengalaman personal Anda dengan visi masa depan: apa yang akan Anda lakukan dengan ilmu yang didapat? Buat pembaca merasa berinvestasi pada kesuksesan Anda.",
     tag: "Dampak",
   },
   {
@@ -50,12 +50,12 @@ export default function TipsPage() {
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-16 sm:py-24">
       {/* Header */}
       <div className="text-center mb-14 animate-fade-in-up">
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-100 mb-4">
+        <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
           Essay Writing Tips
         </h1>
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+        <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
           Panduan praktis untuk menulis esai beasiswa yang kuat, autentik,
-          dan meyakinkan — langsung dari rubrik evaluasi EssayMentor AI.
+          dan meyakinkan: langsung dari rubrik evaluasi EssayMentor AI.
         </p>
       </div>
 
@@ -71,15 +71,15 @@ export default function TipsPage() {
                 {tip.icon}
               </span>
               <div className="flex-1 min-w-0">
-                <h3 className="text-base font-semibold text-slate-100 truncate">
+                <h3 className="text-base font-semibold text-foreground truncate">
                   {tip.title}
                 </h3>
               </div>
-              <span className="rounded-full bg-primary-500/10 border border-primary-500/20 px-2.5 py-0.5 text-[11px] font-medium text-primary-300 shrink-0">
+              <span className="rounded-full bg-primary-500/10 border border-primary-500/20 px-2.5 py-0.5 text-[11px] font-medium text-primary-700 dark:text-primary-300 shrink-0">
                 {tip.tag}
               </span>
             </div>
-            <p className="text-sm text-slate-400 leading-relaxed">
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
               {tip.content}
             </p>
           </div>
@@ -91,10 +91,10 @@ export default function TipsPage() {
         <div className="glass rounded-2xl p-10 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-primary-500/5 to-purple-500/5 pointer-events-none" />
           <div className="relative">
-            <h2 className="text-2xl font-bold text-slate-100 mb-3">
+            <h2 className="text-2xl font-bold text-foreground mb-3">
               Siap menerapkan tips ini?
             </h2>
-            <p className="text-slate-400 mb-6">
+            <p className="text-slate-600 dark:text-slate-400 mb-6">
               Tempel esai Anda dan dapatkan evaluasi AI secara instan.
             </p>
             <Link

@@ -46,6 +46,12 @@ enum FeedbackType {
   FINAL_REVIEW
 }
 
+/// Role wewenang pengguna dalam sistem.
+enum Role {
+  USER
+  ADMIN
+}
+
 // ===========================================================================
 // MODEL: User
 // ===========================================================================
@@ -61,6 +67,7 @@ model User {
   email                   String    @unique
   fullName                String    @map("full_name")
   passwordHash            String    @map("password_hash")
+  role                    Role      @default(USER)
   university              String?
   major                   String?
   graduationYear          Int?      @map("graduation_year")

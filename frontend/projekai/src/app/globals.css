@@ -1,9 +1,6 @@
 @import "tailwindcss";
 
-/* ================================================================
-   EssayMentor AI — Dark Glassmorphism Design System
-   Tailwind CSS v4 @theme — Modern, Premium, Dark-first
-   ================================================================ */
+/* EssayMentor AI design system variables */
 
 @theme inline {
   --color-background: var(--background);
@@ -11,17 +8,14 @@
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
 
-  /* ── Primary (indigo → violet gradient) ──────────── */
   --color-primary-600: #4f46e5;
   --color-primary-500: #6366f1;
   --color-primary-400: #818cf8;
   --color-primary-300: #a5b4fc;
 
-  /* ── Cyan accent ────────────────────────────────── */
   --color-cyan-500: #06b6d4;
   --color-cyan-400: #22d3ee;
 
-  /* ── Slate (text hierarchy) ─────────────────────── */
   --color-slate-900: #0f172a;
   --color-slate-800: #1e293b;
   --color-slate-700: #334155;
@@ -33,13 +27,11 @@
   --color-slate-100: #f1f5f9;
   --color-slate-50: #f8fafc;
 
-  /* ── Surface / Card ─────────────────────────────── */
-  --color-card: rgba(255, 255, 255, 0.03);
-  --color-card-hover: rgba(255, 255, 255, 0.06);
-  --color-border: rgba(255, 255, 255, 0.06);
-  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
 
-  /* ── Anotasi / Semantik ─────────────────────────── */
   --color-anno-green: #10b981;
   --color-anno-amber: #f59e0b;
   --color-anno-red: #ef4444;
@@ -48,8 +40,55 @@
 }
 
 :root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  --card: #ffffff;
+  --card-hover: #f1f5f9;
+  --border: #e2e8f0;
+  --border-hover: #cbd5e1;
+  
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-bg-hover: #ffffff;
+  --glass-border: #e2e8f0;
+  --glass-border-hover: #cbd5e1;
+  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  
+  --pill-bg: #f1f5f9;
+  --pill-bg-hover: #e2e8f0;
+  --pill-border: #cbd5e1;
+  --pill-text: #475569;
+  --pill-text-hover: #0f172a;
+  
+  --skeleton-bg: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 37%, rgba(0,0,0,0.04) 63%);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+}
+
+.dark {
   --background: #09090b;
   --foreground: #e2e8f0;
+
+  --card: rgba(255, 255, 255, 0.03);
+  --card-hover: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-bg-hover: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  
+  --pill-bg: rgba(255, 255, 255, 0.03);
+  --pill-bg-hover: rgba(255, 255, 255, 0.06);
+  --pill-border: rgba(255, 255, 255, 0.08);
+  --pill-text: #94a3b8;
+  --pill-text-hover: #e2e8f0;
+  
+  --skeleton-bg: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 37%, rgba(255,255,255,0.03) 63%);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
 }
 
 /* ── Base ────────────────────────────────────────────── */
@@ -58,6 +97,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* ── Background radial glow ──────────────────────────── */
@@ -89,19 +129,19 @@ body {
 
 /* ── Glassmorphism card ──────────────────────────────── */
 .glass {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
 }
 .glass-hover {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .glass-hover:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--glass-shadow);
 }
 
 /* ── Gradient text ───────────────────────────────────── */
@@ -142,11 +182,11 @@ body {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ── Skeleton shimmer (dark) ─────────────────────────── */
@@ -155,7 +195,7 @@ body {
   100% { background-position: 600px 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 37%, rgba(255,255,255,0.03) 63%);
+  background: var(--skeleton-bg);
   background-size: 600px 100%;
   animation: shimmer 1.8s ease-in-out infinite;
   border-radius: 8px;
@@ -221,7 +261,7 @@ body {
   padding: var(--stroke);
   background: conic-gradient(
     var(--ring-color, #6366f1) calc(var(--progress, 0) * 1%),
-    rgba(255,255,255,0.06) 0
+    var(--glass-border) 0
   );
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
@@ -251,7 +291,7 @@ body {
   width: 100%;
 }
 .nav-link-active {
-  color: #f1f5f9;
+  color: var(--color-primary-500);
 }
 
 /* ── Scholarship pill selector ───────────────────────── */
@@ -260,19 +300,19 @@ body {
   border-radius: 9999px;
   font-size: 0.8125rem;
   font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: #94a3b8;
+  border: 1px solid var(--pill-border);
+  background: var(--pill-bg);
+  color: var(--pill-text);
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
 }
 .pill:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
+  background: var(--pill-bg-hover);
+  color: var(--pill-text-hover);
 }
 .pill-active {
   background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2));
   border-color: rgba(99, 102, 241, 0.4);
-  color: #a5b4fc;
+  color: var(--color-primary-600);
 }
