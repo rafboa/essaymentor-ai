@@ -15,7 +15,7 @@ yarn-error.log
 yarn-debug.log
 .pnpm-debug.log
 bun.lockb
-bun.lock
+
 
 # ==============================================================================
 # Frontend (Next.js)
