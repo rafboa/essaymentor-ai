@@ -135,7 +135,7 @@ essaymentor-ai/
 │       │       └── globals.css      # Variabel Tema & Kontras Aksesibilitas
 │       └── package.json
 │
-├── .gitignore                       # Proteksi file rahasia, .env, dan catatan privat
+├
 └── README.md
 ```
 
