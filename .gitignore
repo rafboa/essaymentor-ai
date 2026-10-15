@@ -5,24 +5,34 @@
 Thumbs.db
 *.log
 .vscode/
+.idea/
 
 # ==============================================================================
 # Node & Bun
 # ==============================================================================
 node_modules/
-npm-debug.log
-yarn-error.log
-yarn-debug.log
-.pnpm-debug.log
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+.pnpm-debug.log*
 bun.lockb
+*.tsbuildinfo
 
+# Prevent accidental root-level npm installs (projects live in backend/ and frontend/)
+/package.json
+/package-lock.json
 
 # ==============================================================================
-# Frontend (Next.js)
+# Frontend (Next.js) & Build Outputs
 # ==============================================================================
+.next/
 frontend/projekai/.next/
 frontend/projekai/out/
 frontend/projekai/build/
+dist/
+out/
+build/
+.turbo/
 
 # ==============================================================================
 # Backend (NestJS & Prisma)
@@ -48,7 +58,7 @@ backend/projekai/prisma/migrations/sqlite/
 *.sqlite3
 
 # ==============================================================================
-# Internal Documentation & Confidential Notes
+# Internal Documentation, AI Artifacts & Confidential Notes
 # ==============================================================================
 INTERNAL_SYSTEM_ARCHITECTURE.md
 laporan*.md
@@ -58,4 +68,15 @@ scratch/
 test_*.js
 test_*.mjs
 test_*.cjs
-
+.claude*
+.gemini*
+.antigravity*
+.impeccable/
+*.impeccable
+HANDOFF.md
+*plan.md
+*audit*.md
+docs/
+DESIGN.md
+PRODUCT.md
+brag-output/

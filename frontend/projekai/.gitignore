@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
+# AI & Internal artifacts
+PRODUCT.md
+DESIGN.md
+.claude*
+.impeccable/
+*.impeccable

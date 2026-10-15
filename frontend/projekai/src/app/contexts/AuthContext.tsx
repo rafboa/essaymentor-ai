@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
-interface User {
+export interface User {
   id: string;
   email: string;
   fullName: string;
@@ -12,12 +12,19 @@ interface User {
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (token: string, user: User) => void;
-  logout: () => void;
+  /** `redirectTo: null` keeps the user on the current page (inline sign-in). */
+  login: (token: string, user: User, opts?: { redirectTo?: string | null }) => void;
+  /** `redirect: false` clears the session without leaving the page (expired token). */
+  logout: (opts?: { redirect?: boolean }) => void;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/** Only same-site paths are accepted as a post-login destination. */
+export function safeNext(next: string | null): string | null {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -26,36 +33,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // Check localStorage on mount
-    const storedToken = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
-
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      try {
+    try {
+      const storedToken = localStorage.getItem("token");
+      const storedUser = localStorage.getItem("user");
+      if (storedToken && storedUser) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage after hydration
+        setToken(storedToken);
         setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error("Failed to parse user from local storage");
       }
+    } catch {
+      // Corrupt or blocked storage: treat as signed out.
     }
     setIsLoading(false);
   }, []);
 
-  const login = (newToken: string, newUser: User) => {
-    localStorage.setItem("token", newToken);
-    localStorage.setItem("user", JSON.stringify(newUser));
-    setToken(newToken);
-    setUser(newUser);
-    router.push("/dashboard");
-  };
+  const login = useCallback<AuthContextType["login"]>(
+    (newToken, newUser, opts) => {
+      try {
+        localStorage.setItem("token", newToken);
+        localStorage.setItem("user", JSON.stringify(newUser));
+      } catch {
+        // Session still works in memory.
+      }
+      setToken(newToken);
+      setUser(newUser);
+      const target = opts?.redirectTo === undefined ? "/dashboard" : opts.redirectTo;
+      if (target) router.push(target);
+    },
+    [router],
+  );
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    setToken(null);
-    setUser(null);
-    router.push("/login");
-  };
+  const logout = useCallback<AuthContextType["logout"]>(
+    (opts) => {
+      try {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+      } catch {
+        // ignore
+      }
+      setToken(null);
+      setUser(null);
+      if (opts?.redirect !== false) router.push("/");
+    },
+    [router],
+  );
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>

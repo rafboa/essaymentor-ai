@@ -1,29 +1,35 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { UsersService } from '../users/users.service.js';
+import { jwtSecret } from './jwt-secret.js';
+import type { AuthUser, JwtPayload } from './auth-user.js';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(private readonly users: UsersService) {
     super({
-      // Dalam MVP kita pakai token dari Authorization Header (Bearer Token)
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // Gunakan JWT_SECRET dari .env, fallback untuk dev saja
-      secretOrKey: process.env.JWT_SECRET || 'essaymentor-super-secret-key',
+      secretOrKey: jwtSecret(),
     });
   }
 
-  async validate(payload: any) {
-    // Passport akan otomatis meng-assign return value ini ke object `req.user`
-    if (!payload.sub || !payload.email) {
+  // The token only proves identity. Role and name come from the database, so a
+  // role change or a deleted account takes effect immediately, not after 7 days.
+  async validate(payload: JwtPayload): Promise<AuthUser> {
+    if (!payload.sub) {
       throw new UnauthorizedException('Token invalid');
     }
+    const user = await this.users.findById(payload.sub);
+    if (!user) {
+      throw new UnauthorizedException('Akun tidak ditemukan.');
+    }
     return {
-      userId: payload.sub,
-      email: payload.email,
-      fullName: payload.fullName,
-      role: payload.role ?? 'USER',
+      userId: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
     };
   }
 }

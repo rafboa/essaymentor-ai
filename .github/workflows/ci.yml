@@ -30,6 +30,14 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      # Not `npm run lint`: that script passes --fix.
+      - name: Lint
+        run: npx eslint "{src,test,prisma}/**/*.ts"
+
+      # Unit tests only; the e2e suite needs a database.
+      - name: Unit tests
+        run: npm test
+
       - name: Build backend
         run: npm run build
 

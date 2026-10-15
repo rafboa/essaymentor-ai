@@ -5,17 +5,22 @@ import { UsersModule } from '../users/users.module.js';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy.js';
+import { jwtSecret } from './jwt-secret.js';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'essaymentor-super-secret-key',
-      signOptions: { expiresIn: '7d' },
+    JwtModule.registerAsync({
+      useFactory: () => ({
+        secret: jwtSecret(),
+        signOptions: { expiresIn: '7d' },
+      }),
     }),
   ],
   providers: [AuthService, JwtStrategy],
   controllers: [AuthController],
+  // UserThrottlerGuard (registered in AppModule) verifies tokens with this JwtService.
+  exports: [JwtModule],
 })
 export class AuthModule {}
