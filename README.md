@@ -4,6 +4,13 @@
 
 ### *Platform Evaluasi Esai Beasiswa Cerdas Berbasis AI*
 
+<img width="1920" height="1080" alt="brag" src="https://github.com/user-attachments/assets/44293c7a-91fd-43e6-9aba-d72e2f8fab4c" />
+
+
+https://github.com/user-attachments/assets/93ac7ddd-4973-4d32-913c-7583375568bf
+
+
+
 Platform bimbingan dan evaluasi esai beasiswa berbasis kecerdasan buatan (Gemini 3.5 Flash-Lite, dengan cadangan DeepSeek dan Groq) yang dirancang untuk membantu mahasiswa menyusun esai yang persuasif, terstruktur, dan berbobot tanpa menghilangkan keaslian gaya tulisan (personal voice).
 
 [![Frontend](https://img.shields.io/badge/Frontend-Next.js_15_App_Router-000000?style=for-the-badge&logo=next.js)](https://nextjs.org/)
