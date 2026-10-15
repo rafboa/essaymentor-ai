@@ -1,19 +1,28 @@
+import './env.js';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
-import { PrismaService } from './prisma/prisma.service.js';
+import { jwtSecret } from './auth/jwt-secret.js';
+
+// Last line of defence: Node's default for an unhandled rejection is to exit,
+// which would take every user's request down with one stray promise.
+process.on('unhandledRejection', (reason) => {
+  new Logger('Process').error(
+    `Unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`,
+  );
+});
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
-  // Validasi keamanan JWT_SECRET pada environment produksi
-  if (process.env.NODE_ENV === 'production') {
-    if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'essaymentor-super-secret-key') {
-      logger.error('FATAL: JWT_SECRET wajib diatur dengan rahasia aman di environment produksi.');
-      process.exit(1);
-    }
+  // Fail fast with a readable message instead of a DI stack trace.
+  try {
+    jwtSecret();
+  } catch (error) {
+    logger.error(`FATAL: ${error instanceof Error ? error.message : error}`);
+    process.exit(1);
   }
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -43,12 +52,15 @@ async function bootstrap() {
     }),
   );
 
-  // 5. Graceful shutdown Prisma
-  const prismaService = app.get(PrismaService);
-  await prismaService.enableShutdownHooks(app);
+  // 5. Graceful shutdown on SIGINT/SIGTERM: runs onModuleDestroy, which closes Prisma.
+  app.enableShutdownHooks();
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   logger.log(`Aplikasi berjalan di port ${port}`);
 }
-bootstrap().catch(console.error);
+// A failed start (e.g. the database is down) must exit non-zero so restart policies fire.
+bootstrap().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

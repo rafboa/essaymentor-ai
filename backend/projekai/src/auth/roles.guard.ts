@@ -1,7 +1,13 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 import { ROLES_KEY } from './roles.decorator.js';
+import type { AuthUser } from './auth-user.js';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -15,9 +21,11 @@ export class RolesGuard implements CanActivate {
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
     }
-    const { user } = context.switchToHttp().getRequest();
+    const { user } = context.switchToHttp().getRequest<{ user?: AuthUser }>();
     if (!user || !user.role || !requiredRoles.includes(user.role)) {
-      throw new ForbiddenException('Akses ditolak: Anda tidak memiliki wewenang untuk sumber daya ini.');
+      throw new ForbiddenException(
+        'Akses ditolak: Anda tidak memiliki wewenang untuk sumber daya ini.',
+      );
     }
     return true;
   }

@@ -2,60 +2,96 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useTheme } from "next-themes";
+import { Menu, Moon, Sun, X } from "lucide-react";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useAuth } from "../contexts/AuthContext";
-import { useTheme } from "next-themes";
-import { Sun, Moon } from "lucide-react";
+import { BrandMark } from "./BrandMark";
+import type { Language } from "../i18n/dictionaries";
+import { useIsClient } from "../lib/useClient";
 
 export function Navbar() {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const { language, setLanguage, t } = useLanguage();
-  const { user, logout } = useAuth();
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const { user, logout, isLoading } = useAuth();
+  const { resolvedTheme, setTheme } = useTheme();
+  const mounted = useIsClient();
+  const [open, setOpen] = useState(false);
+  // Close the menu whenever the route changes.
+  const [menuPath, setMenuPath] = useState(pathname);
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    setOpen(false);
+  }
 
-  useEffect(() => setMounted(true), []);
-
-  const currentTheme = theme === 'system' ? resolvedTheme : theme;
-
-  const NAV_LINKS = [
-    { href: "/", label: t.nav.home },
+  const links = [
     { href: "/evaluator", label: t.nav.evaluator },
+    ...(user ? [{ href: "/dashboard", label: t.nav.history }] : []),
     { href: "/scholarships", label: t.nav.scholarships },
     { href: "/tips", label: t.nav.tips },
     { href: "/about", label: t.nav.about },
   ];
 
+  const isDark = resolvedTheme === "dark";
+
+  const languageSwitch = (
+    <div role="group" aria-label={t.nav.language} className="flex rounded-[3px] border border-white/25 p-0.5">
+      {(["id", "en"] as Language[]).map((lang) => (
+        <button
+          key={lang}
+          type="button"
+          onClick={() => setLanguage(lang)}
+          aria-pressed={language === lang}
+          className={`min-h-7 min-w-9 rounded-[2px] px-2 text-xs font-semibold uppercase tracking-wider ${
+            language === lang ? "bg-on-bar text-bar" : "text-on-bar-2 hover:text-on-bar"
+          }`}
+        >
+          {lang}
+        </button>
+      ))}
+    </div>
+  );
+
+  const themeButton = mounted ? (
+    <button
+      type="button"
+      onClick={() => setTheme(isDark ? "light" : "dark")}
+      aria-label={isDark ? t.nav.themeToLight : t.nav.themeToDark}
+      className="grid size-9 place-items-center rounded-[3px] text-on-bar-2 hover:bg-white/10 hover:text-on-bar"
+    >
+      {isDark ? <Sun size={17} strokeWidth={1.75} /> : <Moon size={17} strokeWidth={1.75} />}
+    </button>
+  ) : (
+    <span className="size-9" />
+  );
+
   return (
-    <header className="sticky top-0 z-50 border-b border-border backdrop-blur-xl bg-background/80">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-xl">🎓</span>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-bold text-foreground">
-              EssayMentor <span className="gradient-text">AI</span>
-            </span>
-            <span className="text-[10px] text-slate-500 hidden sm:block">
-              {language === 'id' ? 'Evaluasi cerdas. Tulisan autentik.' : 'Evaluate smarter. Write truer.'}
-            </span>
-          </div>
+    <header className="sticky top-0 z-40 bg-bar text-on-bar">
+      <a
+        href="#content"
+        className="sr-only-focusable absolute left-4 top-2 z-50 rounded-[3px] bg-on-bar px-3 py-2 text-sm font-semibold text-bar"
+      >
+        {t.nav.skip}
+      </a>
+      <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-8 px-4 sm:px-6 lg:px-8">
+        <Link href="/" className="flex items-center gap-2.5 py-2" aria-label="EssayMentor AI — home">
+          <BrandMark className="h-[22px] w-4 text-on-bar" />
+          <span className="text-[15px] font-bold tracking-tight">
+            EssayMentor <span className="font-medium text-on-bar-2">AI</span>
+          </span>
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-1">
-          {NAV_LINKS.map((link) => {
-            const isActive = pathname === link.href;
+        <nav aria-label={t.nav.label} className="hidden h-full items-stretch gap-1 lg:flex">
+          {links.map((link) => {
+            const active = pathname === link.href;
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`nav-link px-3 py-2 text-sm font-medium ${
-                  isActive
-                    ? "nav-link-active"
-                    : "text-slate-600 dark:text-slate-400 hover:text-foreground"
+                aria-current={active ? "page" : undefined}
+                className={`flex items-center border-b-2 px-3 text-sm font-medium ${
+                  active ? "border-on-bar text-on-bar" : "border-transparent text-on-bar-2 hover:text-on-bar"
                 }`}
               >
                 {link.label}
@@ -64,121 +100,96 @@ export function Navbar() {
           })}
         </nav>
 
-        {/* CTA + Language Toggle + Theme Toggle + Mobile Toggle */}
-        <div className="flex items-center gap-3">
-          {mounted && (
-            <button
-              onClick={() => setTheme(currentTheme === 'dark' ? 'light' : 'dark')}
-              className="p-2 text-slate-600 dark:text-slate-400 hover:text-foreground transition-colors rounded-lg focus-visible:ring-2 focus-visible:ring-primary-500"
-              aria-label="Toggle Theme"
-            >
-              {currentTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="hidden items-center gap-2 sm:flex">
+            {languageSwitch}
+            {themeButton}
+          </div>
+          {!isLoading && (
+            <div className="hidden items-center gap-1 border-l border-white/20 pl-3 lg:flex">
+              {user ? (
+                <>
+                  <span className="max-w-40 truncate px-2 text-sm text-on-bar-2">{user.fullName}</span>
+                  <button
+                    type="button"
+                    onClick={() => logout()}
+                    className="min-h-9 rounded-[3px] px-3 text-sm font-medium text-on-bar-2 hover:bg-white/10 hover:text-on-bar"
+                  >
+                    {t.nav.logout}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="flex min-h-9 items-center rounded-[3px] px-3 text-sm font-medium text-on-bar-2 hover:bg-white/10 hover:text-on-bar"
+                  >
+                    {t.nav.login}
+                  </Link>
+                  <Link
+                    href="/register"
+                    className="flex min-h-9 items-center rounded-[3px] border border-on-bar px-3 text-sm font-semibold text-on-bar hover:bg-on-bar hover:text-bar"
+                  >
+                    {t.nav.register}
+                  </Link>
+                </>
+              )}
+            </div>
           )}
-
-          {/* Language Toggle */}
-          <div className="flex items-center bg-card rounded-lg p-1 border border-border">
-            <button
-              onClick={() => setLanguage('id')}
-              className={`px-2 py-1 text-xs font-medium rounded ${
-                language === 'id' ? 'bg-primary-500/20 text-primary-600 dark:text-primary-300 font-semibold' : 'text-slate-500 hover:text-foreground'
-              }`}
-            >
-              ID
-            </button>
-            <button
-              onClick={() => setLanguage('en')}
-              className={`px-2 py-1 text-xs font-medium rounded ${
-                language === 'en' ? 'bg-primary-500/20 text-primary-600 dark:text-primary-300 font-semibold' : 'text-slate-500 hover:text-foreground'
-              }`}
-            >
-              EN
-            </button>
-          </div>
-
-          {/* Auth Buttons */}
-          <div className="hidden sm:flex items-center gap-2 ml-2 border-l border-border pl-4">
-            {user ? (
-              <>
-                <Link href="/dashboard" className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-foreground">
-                  Dashboard
-                </Link>
-                <button onClick={logout} className="text-sm font-medium text-red-500 hover:text-red-400 ml-3">
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <Link href="/login" className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-foreground">
-                  Login
-                </Link>
-                <Link href="/register" className="btn-gradient rounded-lg px-4 py-1.5 text-sm ml-2">
-                  Daftar
-                </Link>
-              </>
-            )}
-          </div>
-
-          {/* Mobile hamburger */}
           <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden flex flex-col gap-1 p-2 focus-visible:ring-2 focus-visible:ring-primary-500 rounded-lg"
-            aria-label="Toggle menu"
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls="mobile-menu"
+            aria-label={open ? t.nav.closeMenu : t.nav.menu}
+            className="grid size-10 place-items-center rounded-[3px] hover:bg-white/10 lg:hidden"
           >
-            <span
-              className={`block h-0.5 w-5 bg-foreground transition-transform ${
-                mobileOpen ? "translate-y-1.5 rotate-45" : ""
-              }`}
-            />
-            <span
-              className={`block h-0.5 w-5 bg-foreground transition-opacity ${
-                mobileOpen ? "opacity-0" : ""
-              }`}
-            />
-            <span
-              className={`block h-0.5 w-5 bg-foreground transition-transform ${
-                mobileOpen ? "-translate-y-1.5 -rotate-45" : ""
-              }`}
-            />
+            {open ? <X size={20} strokeWidth={1.75} /> : <Menu size={20} strokeWidth={1.75} />}
           </button>
         </div>
       </div>
 
-      {/* Mobile Menu */}
-      {mobileOpen && (
-        <div className="md:hidden border-t border-border animate-fade-in-up bg-background">
-          <nav className="flex flex-col px-4 py-3 gap-1">
-            {NAV_LINKS.map((link) => {
-              const isActive = pathname === link.href;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary-500/10 text-primary-600 dark:text-primary-400"
-                      : "text-slate-600 dark:text-slate-400 hover:bg-card-hover hover:text-foreground"
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              );
-            })}
-            
-            <div className="mt-4 pt-4 border-t border-border flex flex-col gap-2">
-              {user ? (
-                <>
-                  <Link href="/dashboard" onClick={() => setMobileOpen(false)} className="text-sm font-medium text-slate-700 dark:text-slate-300 px-3">Dashboard</Link>
-                  <button onClick={() => { logout(); setMobileOpen(false); }} className="text-sm font-medium text-red-500 px-3 text-left">Logout</button>
-                </>
-              ) : (
-                <>
-                  <Link href="/login" onClick={() => setMobileOpen(false)} className="text-sm font-medium text-slate-700 dark:text-slate-300 px-3">Login</Link>
-                  <Link href="/register" onClick={() => setMobileOpen(false)} className="btn-gradient rounded-lg px-4 py-2.5 text-sm text-center mt-2">Daftar</Link>
-                </>
-              )}
+      {open && (
+        <div id="mobile-menu" className="border-t border-white/15 lg:hidden">
+          <nav aria-label={t.nav.label} className="mx-auto flex max-w-[1440px] flex-col px-4 py-2 sm:px-6">
+            {[{ href: "/", label: t.nav.home }, ...links].map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={pathname === link.href ? "page" : undefined}
+                className={`flex min-h-12 items-center border-l-2 pl-3 text-[15px] ${
+                  pathname === link.href ? "border-on-bar font-semibold text-on-bar" : "border-transparent text-on-bar-2"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/15 py-3 sm:hidden">
+              {languageSwitch}
+              {themeButton}
             </div>
+            {!isLoading && (
+              <div className="flex gap-2 border-t border-white/15 py-3">
+                {user ? (
+                  <button
+                    type="button"
+                    onClick={() => logout()}
+                    className="min-h-11 flex-1 rounded-[3px] border border-white/30 text-sm font-medium"
+                  >
+                    {t.nav.logout}
+                  </button>
+                ) : (
+                  <>
+                    <Link href="/login" className="flex min-h-11 flex-1 items-center justify-center rounded-[3px] border border-white/30 text-sm font-medium">
+                      {t.nav.login}
+                    </Link>
+                    <Link href="/register" className="flex min-h-11 flex-1 items-center justify-center rounded-[3px] bg-on-bar text-sm font-semibold text-bar">
+                      {t.nav.register}
+                    </Link>
+                  </>
+                )}
+              </div>
+            )}
           </nav>
         </div>
       )}

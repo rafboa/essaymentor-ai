@@ -4,15 +4,23 @@
 // File ini membungkus PrismaClient dalam sebuah NestJS injectable service
 // yang mengelola lifecycle koneksi database secara otomatis:
 //   - onModuleInit()    → membuka koneksi saat modul di-bootstrap.
-//   - enableShutdownHooks() → menutup koneksi saat app di-terminate (SIGINT/SIGTERM),
+//   - onModuleDestroy() → menutup koneksi saat app di-terminate (SIGINT/SIGTERM),
 //     mencegah connection leak di production.
 // ===========================================================================
 
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
@@ -43,17 +51,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   }
 
   /**
-   * Mendaftarkan hook agar Prisma menutup koneksi dengan bersih
-   * saat NestJS menerima sinyal shutdown (SIGINT / SIGTERM).
-   *
-   * Panggil method ini sekali di `main.ts` setelah app dibuat:
-   *   const prismaService = app.get(PrismaService);
-   *   prismaService.enableShutdownHooks(app);
+   * Dipanggil oleh NestJS saat shutdown (SIGINT / SIGTERM), karena
+   * `app.enableShutdownHooks()` diaktifkan di `main.ts`. Menutup koneksi.
    */
-  async enableShutdownHooks(app: { close: () => Promise<void> }): Promise<void> {
-    process.on('beforeExit', async () => {
-      this.logger.log('Menutup koneksi database (beforeExit)...');
-      await app.close();
-    });
+  async onModuleDestroy(): Promise<void> {
+    this.logger.log('Menutup koneksi database...');
+    await this.$disconnect();
   }
 }

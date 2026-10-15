@@ -52,6 +52,13 @@ enum Role {
   ADMIN
 }
 
+/// Paket akses AI. FREE memakai model murah (Groq) lebih dulu; PRO (dan ADMIN)
+/// memakai Gemini lebih dulu.
+enum Plan {
+  FREE
+  PRO
+}
+
 // ===========================================================================
 // MODEL: User
 // ===========================================================================
@@ -68,6 +75,7 @@ model User {
   fullName                String    @map("full_name")
   passwordHash            String    @map("password_hash")
   role                    Role      @default(USER)
+  plan                    Plan      @default(FREE)
   university              String?
   major                   String?
   graduationYear          Int?      @map("graduation_year")
@@ -155,6 +163,8 @@ model AiFeedback {
   scores           Json         @db.Json
   annotations      Json         @db.Json
   overallComment   String       @db.Text @map("overall_comment")
+  topStrengths     Json?        @db.Json @map("top_strengths")
+  topImprovements  Json?        @db.Json @map("top_improvements")
   voicePreserved   Boolean      @default(true) @map("voice_preserved")
   modelVersion     String       @default("llama-3.3-70b-versatile") @map("model_version")
   promptTokens     Int          @default(0) @map("prompt_tokens")

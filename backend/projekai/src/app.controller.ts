@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AppService } from './app.service.js';
 
+@SkipThrottle({ auth: true, llm: true, llmIp: true })
 @Controller()
 export class AppController {
   constructor(private readonly appService: AppService) {}

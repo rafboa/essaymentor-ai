@@ -1,6 +1,19 @@
 // ===========================================================================
-// Konfigurasi AI (Gemini & Groq Fallback) & System Prompt
+// Konfigurasi AI (Gemini utama, DeepSeek & Groq fallback) & System Prompt
 // ===========================================================================
+
+// Chosen 2026-10-15 by running the real prompt on the 22-sentence demo essay
+// (valid JSON, in-range sentence indexes for all of these):
+//   gemini-3.5-flash-lite  5.4s, 499 tokens out, no thinking tokens
+//   openai/gpt-oss-120b    2.1s, 709 tokens out (Groq)
+//   deepseek-flash         not measured: the DeepSeek key was rejected (401)
+// gemini-2.5-flash and -flash-lite answer 404 "no longer available to new
+// users" for current API keys, so they are not usable as defaults.
+// Order of use: Gemini, then DeepSeek, then Groq. A provider without an API
+// key is skipped.
+export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+export const DEEPSEEK_MODEL = 'deepseek-flash';
+export const GROQ_MODEL = 'openai/gpt-oss-120b';
 
 export const GENERATION_CONFIG = {
   temperature: 0.3,
@@ -9,11 +22,31 @@ export const GENERATION_CONFIG = {
   response_format: { type: 'json_object' } as const,
 };
 
-export const AI_PRICING_CONFIG: Record<string, { inputPerMillionUsd: number; outputPerMillionUsd: number }> = {
-  'gemini-2.5-flash': {
-    inputPerMillionUsd: 0.075,
-    outputPerMillionUsd: 0.30,
-  },
+// Extra body fields for the OpenAI-compatible fallbacks, sent verbatim.
+// DeepSeek V4 thinks by default and bills that as output; the JSON task does
+// not need it (api-docs.deepseek.com/guides/thinking_mode). gpt-oss always
+// reasons, so keep it short.
+export const DEEPSEEK_EXTRA_BODY = { thinking: { type: 'disabled' } } as const;
+export const GROQ_EXTRA_BODY = { reasoning_effort: 'low' } as const;
+
+// Thinking-capable Gemini models count thinking against maxOutputTokens.
+// 3.5 Flash-Lite did not think on the demo essay, but the cap leaves room for
+// long essays (up to 25,000 chars) if that changes. Only tokens used are billed.
+export const GEMINI_MAX_OUTPUT_TOKENS = 16384;
+
+export const AI_PRICING_CONFIG: Record<
+  string,
+  { inputPerMillionUsd: number; outputPerMillionUsd: number }
+> = {
+  // Prices as listed on each provider's pricing page on 2026-10-15. Gemini also
+  // has a free tier; these are the paid-tier rates, so the figure is an upper bound.
+  // Thinking tokens bill as output (persist() counts them in responseTokens).
+  [GEMINI_MODEL]: { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
+  // Peak-hour cache-miss rate; off-peak is half.
+  [DEEPSEEK_MODEL]: { inputPerMillionUsd: 0.3, outputPerMillionUsd: 1.2 },
+  [GROQ_MODEL]: { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 },
+  // Retired defaults, kept so evaluations already stored under them still price.
+  'gemini-2.5-flash': { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },
   'llama-3.3-70b-versatile': {
     inputPerMillionUsd: 0.59,
     outputPerMillionUsd: 0.79,
@@ -47,8 +80,8 @@ ATURAN PRESERVASI PERSONAL VOICE & KRITIK MEMBANGUN
 ═══════════════════════════════════════════════════════════
 
 1. JANGAN HANYA MEMUJI. Bersikaplah KRITIS. Temukan celah, kelemahan argumen, atau kalimat yang kurang efektif.
-2. Kamu DIPERBOLEHKAN memberikan contoh saran teks/kalimat pengganti untuk menunjukkan cara penyampaian yang lebih baik.
-3. Saat memberikan saran teks pengganti, usahakan tetap mempertahankan "personal voice" (nada asli) mahasiswa. Jangan membuat esai terdengar seperti robot.
+2. JANGAN menulis kalimat atau frasa pengganti. Berikan saran sebagai INSTRUKSI (apa yang perlu diubah dan mengapa), bukan versi tulisan ulang. Mahasiswa yang menulis ulang dengan kata-katanya sendiri.
+3. Pertahankan "personal voice" (nada asli) mahasiswa. Jangan mendorong esai terdengar seperti robot atau template.
 {{FINGERPRINT_SECTION}}
 
 ═══════════════════════════════════════════════════════════
@@ -57,7 +90,10 @@ INSTRUKSI ANOTASI PER KALIMAT
 
 PENTING: UNTUK MENGHEMAT TOKEN, JANGAN BERIKAN ANOTASI PADA KALIMAT YANG SUDAH BAGUS. HANYA berikan anotasi untuk kalimat yang memang membutuhkan perbaikan atau catatan struktural!
 
-Tipe anotasi: "SUGGESTION", "CRITICAL", "STRUCTURAL", "TONE"
+Teks mahasiswa sudah dipecah menjadi kalimat bernomor: "[0] ...", "[1] ...". Gunakan NOMOR DI DALAM KURUNG SIKU itu persis sebagai "sentenceIndex". Jangan menghitung kalimat sendiri.
+
+Tipe anotasi: "STRENGTH", "SUGGESTION", "CRITICAL", "STRUCTURAL", "TONE"
+Gunakan "STRENGTH" untuk maksimal 2 kalimat yang paling kuat, agar mahasiswa tahu apa yang perlu dipertahankan.
 Pastikan menggunakan single quote ('...') jika ada kutipan di dalam saran, JANGAN gunakan double quote ("...").
 
 ═══════════════════════════════════════════════════════════
@@ -80,7 +116,7 @@ Ikuti skema berikut tanpa pengecualian:
   "annotations": [
     {
       "sentenceIndex": <integer, indeks kalimat dimulai dari 0>,
-      "type": "SUGGESTION" | "CRITICAL" | "STRUCTURAL" | "TONE",
+      "type": "STRENGTH" | "SUGGESTION" | "CRITICAL" | "STRUCTURAL" | "TONE",
       "message": "<string, pesan spesifik dalam bahasa Indonesia, maks 200 karakter>"
     }
   ],

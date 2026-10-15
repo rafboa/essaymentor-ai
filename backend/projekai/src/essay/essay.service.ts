@@ -4,523 +4,234 @@ import {
   InternalServerErrorException,
   BadRequestException,
   NotFoundException,
-  ForbiddenException,
 } from '@nestjs/common';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+  FinishReason,
+  GoogleGenerativeAI,
+  type EnhancedGenerateContentResponse,
+  type UsageMetadata,
+} from '@google/generative-ai';
 import OpenAI from 'openai';
+import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import type { AiFeedback, EssayDraft, Plan, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SubmitEssayDto } from './dto/submit-essay.dto.js';
+import { numberSentences } from './sentences.js';
+import {
+  parseEvaluation,
+  extractJsonObject,
+  type AiEvaluationResponse,
+} from './evaluation.js';
+import {
+  fillTemplate,
+  fingerprintSection,
+  sanitizeFingerprint,
+  type StyleFingerprint,
+} from './prompt.js';
 import {
   SYSTEM_PROMPT,
   USER_PROMPT_TEMPLATE,
+  STYLE_FINGERPRINT_PROMPT,
   GENERATION_CONFIG,
+  GEMINI_MAX_OUTPUT_TOKENS,
+  GEMINI_MODEL,
+  DEEPSEEK_MODEL,
+  DEEPSEEK_EXTRA_BODY,
+  GROQ_MODEL,
+  GROQ_EXTRA_BODY,
   AI_PRICING_CONFIG,
 } from './ai.config.js';
 
-// ─── Tipe untuk respons AI yang sudah di-parse (exported untuk TS) ────────
+export type {
+  AiScores,
+  AiAnnotation,
+  AiEvaluationResponse,
+} from './evaluation.js';
 
-export interface AiScores {
-  structure: number;
-  tone: number;
-  relevance: number;
-  originality: number;
-  impact: number;
+export type StreamEvent = 'status' | 'chunk' | 'done' | 'error';
+export type EmitEvent = (event: StreamEvent, data: unknown) => void;
+
+/** A draft saved and its prompts assembled, ready to send to a model. */
+interface PreparedRun {
+  draft: EssayDraft;
+  systemPrompt: string;
+  userPrompt: string;
+  isParagraph: boolean;
+  sentenceCount: number;
+  /** Limited access (FREE plan, not an admin): the cheap provider goes first. */
+  limited: boolean;
 }
 
-export interface AiAnnotation {
-  sentenceIndex: number;
-  type: 'STRENGTH' | 'SUGGESTION' | 'CRITICAL' | 'STRUCTURAL' | 'TONE';
-  message: string;
+interface Completion {
+  text: string;
+  model: string;
+  promptTokens: number;
+  responseTokens: number;
+  // Parsed inside each provider attempt, so unusable JSON from one provider moves on to the next.
+  evaluation: AiEvaluationResponse;
 }
 
-export interface AiEvaluationResponse {
-  scores: AiScores;
-  compositeScore: number;
-  annotations: AiAnnotation[];
-  overallComment: string;
-  topStrengths: string[];
-  topImprovements: string[];
-  voicePreserved: boolean;
+// The API reports thinking tokens; this SDK version's types predate the field.
+type GeminiUsage = UsageMetadata & { thoughtsTokenCount?: number };
+
+const DRAFT_NOT_FOUND = 'Draft tidak ditemukan atau Anda tidak memiliki akses.';
+
+const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+type ChatMessage = { role: 'system' | 'user'; content: string };
+
+type FallbackName = 'DeepSeek' | 'Groq';
+/** Full-access accounts: Gemini first, then these. */
+const DEFAULT_ORDER: FallbackName[] = ['DeepSeek', 'Groq'];
+/** Limited accounts: these first, Gemini only as the last resort. */
+const LIMITED_ORDER: FallbackName[] = ['Groq', 'DeepSeek'];
+
+/** FREE accounts are limited; admins never are. An unknown user is treated as limited. */
+const isLimited = (user: { plan: Plan; role: Role } | null) =>
+  !user || (user.role !== 'ADMIN' && user.plan === 'FREE');
+
+interface ProviderResult<T> {
+  text: string;
+  model: string;
+  promptTokens: number;
+  responseTokens: number;
+  parsed: T;
 }
+
+/** Cuts a failure down to one line for logs and for the combined error. */
+const describe = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).slice(0, 200);
 
 @Injectable()
 export class EssayService {
   private readonly logger = new Logger(EssayService.name);
-  
+
   // Clients
   private readonly gemini: GoogleGenerativeAI;
-  private readonly groq: OpenAI;
+  // OpenAI-compatible fallbacks; null when the API key is missing.
+  private readonly deepseek: OpenAI | null;
+  private readonly groq: OpenAI | null;
 
-  // Models
-  private readonly geminiModelName = 'gemini-2.5-flash';
-  private readonly groqModelName = 'llama-3.3-70b-versatile';
+  private readonly geminiModelName = GEMINI_MODEL;
 
   constructor(private readonly prisma: PrismaService) {
     // ── Inisialisasi Gemini SDK ───────────────────────────────────────────
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) {
-      this.logger.warn('GEMINI_API_KEY tidak ditemukan. Evaluasi utama mungkin gagal.');
+      this.logger.warn(
+        'GEMINI_API_KEY tidak ditemukan. Evaluasi utama mungkin gagal.',
+      );
     }
     this.gemini = new GoogleGenerativeAI(geminiKey || '');
 
-    // ── Inisialisasi Groq SDK via OpenAI client ───────────────────────────
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) {
-      this.logger.warn('GROQ_API_KEY tidak ditemukan. Fallback tidak akan berjalan.');
+    this.deepseek = this.openAiClient(
+      'DEEPSEEK_API_KEY',
+      'https://api.deepseek.com',
+    );
+    this.groq = this.openAiClient(
+      'GROQ_API_KEY',
+      'https://api.groq.com/openai/v1',
+    );
+  }
+
+  private openAiClient(envName: string, baseURL: string): OpenAI | null {
+    const apiKey = process.env[envName];
+    if (!apiKey) {
+      this.logger.warn(`${envName} tidak ditemukan. Provider ini dilewati.`);
+      return null;
     }
-    this.groq = new OpenAI({
-      apiKey: groqKey || '',
-      baseURL: 'https://api.groq.com/openai/v1',
-    });
+    // One retry, and a bound on each call, so a stuck provider cannot hold
+    // the request long enough to starve the next one in the chain.
+    return new OpenAI({ apiKey, baseURL, maxRetries: 1, timeout: 60_000 });
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // PUBLIC: Submit esai → evaluasi AI → simpan ke DB → return ke klien
   // ═══════════════════════════════════════════════════════════════════════
 
-  async submitAndEvaluate(dto: SubmitEssayDto) {
-    // ── 1. Validasi input ────────────────────────────────────────────────
-    if (!dto.content || dto.content.trim().length === 0) {
-      throw new BadRequestException('Konten esai tidak boleh kosong.');
-    }
-    if (!dto.userId || dto.userId.trim().length === 0) {
-      throw new BadRequestException('userId wajib diisi.');
-    }
+  async submitAndEvaluate(dto: SubmitEssayDto, userId: string) {
+    const run = await this.prepare(dto, userId);
+    const startTime = Date.now();
 
-    const essayContent = dto.content.trim();
-    const wordCount = essayContent.split(/\s+/).length;
-
-    this.logger.log(
-      `Menerima esai dari user ${dto.userId} — ${wordCount} kata.`,
-    );
-
-    // ── 2. Dapatkan atau Buat Draft ───────────────────────────
-    let draft;
-    if (dto.draftId) {
-      draft = await this.prisma.essayDraft.findUnique({ where: { id: dto.draftId } });
-      if (!draft || draft.userId !== dto.userId) {
-        throw new BadRequestException('Draft tidak ditemukan atau Anda tidak memiliki akses.');
-      }
-      draft = await this.prisma.essayDraft.update({
-        where: { id: draft.id },
-        data: {
-          title: dto.title?.trim() || draft.title,
-          scholarshipTarget: dto.scholarshipTarget?.trim() || draft.scholarshipTarget,
-          content: essayContent,
-          status: 'IN_REVIEW',
-          totalWordCount: wordCount,
-          version: draft.version + 1,
-        },
-      });
-      this.logger.log(`Draft diupdate (v${draft.version}) dengan ID: ${draft.id}`);
-    } else {
-      draft = await this.prisma.essayDraft.create({
-        data: {
-          userId: dto.userId,
-          title: dto.title?.trim() || 'Esai Tanpa Judul',
-          scholarshipTarget: dto.scholarshipTarget?.trim() || null,
-          content: essayContent,
-          status: 'IN_REVIEW',
-          totalWordCount: wordCount,
-        },
-      });
-      this.logger.log(`Draft tersimpan (v1) dengan ID: ${draft.id}`);
-    }
-
-    // ── 3. Ambil Fingerprint User ──────────────────────────────────────────
-    const user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
-    const fingerprint = user?.writingStyleFingerprint;
-    const fingerprintStr = fingerprint
-      ? `\n4. PERHATIKAN Writing Style Fingerprint penulis:\n   - Vocabulary: ${(fingerprint as any).vocabularyLevel}\n   - Sentence Variance: ${(fingerprint as any).sentenceLengthVariance}\n   - Tone: ${(fingerprint as any).tone}\n   - Quirks: ${((fingerprint as any).quirks || []).join(', ')}\n   Pastikan saranmu mempertimbangkan gaya ini.`
-      : `\n4. Jika mahasiswa menggunakan gaya bercerita unik yang efektif, pertahankan. Namun jika bertele-tele, sarankan pemangkasan.`;
-
-    const systemPromptWithFingerprint = SYSTEM_PROMPT.replace('{{FINGERPRINT_SECTION}}', fingerprintStr);
-
-    // ── 4. Rakit Prompt ──────────────────────────────────────────────────
-    const isParagraph = dto.mode === 'PARAGRAPH';
-    const textToEvaluate = (isParagraph && dto.targetText) ? dto.targetText.trim() : essayContent;
-
-    const userPrompt = USER_PROMPT_TEMPLATE
-      .replace('{{SCHOLARSHIP_TARGET}}', dto.scholarshipTarget || 'Umum / Tidak ditentukan')
-      .replace('{{EVALUATION_MODE}}', isParagraph ? 'EVALUASI 1 PARAGRAF SPESIFIK' : 'EVALUASI FULL ESAI')
-      .replace('{{ESSAY_CONTENT}}', textToEvaluate);
-
-    let evaluation: AiEvaluationResponse;
-    let rawResponseText: string = '';
-    let promptTokenCount = 0;
-    let responseTokenCount = 0;
-    let processingTimeMs = 0;
-    let usedModel = this.geminiModelName;
-
-    // ── 4. Evaluasi dengan Fallback Mechanism ───────────────────────────
+    let completion: Completion;
     try {
-      const startTime = Date.now();
-      
-      try {
-        // --- COBA GEMINI (UTAMA) ---
-        this.logger.log('Mencoba evaluasi menggunakan Gemini (Utama)...');
-        const model = this.gemini.getGenerativeModel({
-          model: this.geminiModelName,
-          systemInstruction: systemPromptWithFingerprint,
-          generationConfig: {
-            temperature: GENERATION_CONFIG.temperature,
-            topP: GENERATION_CONFIG.top_p,
-            maxOutputTokens: GENERATION_CONFIG.max_tokens,
-            responseMimeType: "application/json",
-          },
-        });
-
-        const result = await model.generateContent(userPrompt);
-        rawResponseText = result.response.text();
-        usedModel = this.geminiModelName;
-        
-        // Token counting for Gemini is available in response.usageMetadata
-        const usage = result.response.usageMetadata;
-        if (usage) {
-          promptTokenCount = usage.promptTokenCount;
-          responseTokenCount = usage.candidatesTokenCount;
-        }
-
-      } catch (geminiError) {
-        // --- FALLBACK KE GROQ JIKA GEMINI GAGAL ---
-        const errMsg = geminiError instanceof Error ? geminiError.message : String(geminiError);
-        this.logger.warn(`Gemini gagal (${errMsg}). Beralih ke Groq (Fallback)...`);
-
-        const groqResult = await this.groq.chat.completions.create({
-          model: this.groqModelName,
-          messages: [
-            { role: 'system', content: systemPromptWithFingerprint },
-            { role: 'user', content: userPrompt }
-          ],
-          ...GENERATION_CONFIG,
-        });
-
-        rawResponseText = groqResult.choices[0]?.message?.content || '';
-        usedModel = this.groqModelName;
-
-        if (groqResult.usage) {
-          promptTokenCount = groqResult.usage.prompt_tokens ?? 0;
-          responseTokenCount = groqResult.usage.completion_tokens ?? 0;
-        }
-      }
-
-      processingTimeMs = Date.now() - startTime;
-      this.logger.log(
-        `Berhasil menggunakan ${usedModel} dalam ${processingTimeMs}ms ` +
-        `(prompt: ${promptTokenCount} token, response: ${responseTokenCount} token)`,
-      );
-
-      // ── 5. Parse JSON respons dari AI ─────────────────────────────────
-      evaluation = this.parseAiResponse(rawResponseText);
+      completion = await this.complete(run);
     } catch (error) {
-      // Jika KEDUANYA gagal, update status draft kembali ke DRAFT
-      await this.prisma.essayDraft.update({
-        where: { id: draft.id },
-        data: { status: 'DRAFT' },
-      });
-
+      await this.markIdle(run.draft.id);
       this.logger.error(
-        `Gagal mengevaluasi esai (Gemini & Groq fail): ${error instanceof Error ? error.message : error}`,
+        `Gagal mengevaluasi esai (semua provider gagal): ${error instanceof Error ? error.message : error}`,
       );
       throw new InternalServerErrorException(
         'Terjadi kesalahan saat mengevaluasi esai. AI Provider sedang sibuk, silakan coba lagi nanti.',
       );
     }
 
-    // ── 6. Simpan feedback AI ke database ────────────────────────────────
-    const feedback = await this.prisma.aiFeedback.create({
-      data: {
-        draftId: draft.id,
-        feedbackType: isParagraph ? 'PARAGRAPH' : 'FULL_ESSAY',
-        scores: evaluation.scores as object,
-        annotations: evaluation.annotations as object[],
-        overallComment: evaluation.overallComment,
-        voicePreserved: evaluation.voicePreserved,
-        modelVersion: usedModel,
-        promptTokens: promptTokenCount,
-        responseTokens: responseTokenCount,
-        processingTimeMs: processingTimeMs,
-        // Simpan data mentah hanya di development untuk debugging
-        rawPrompt: process.env.NODE_ENV === 'development' ? SYSTEM_PROMPT : null,
-        rawResponse: process.env.NODE_ENV === 'development' ? rawResponseText : null,
-      },
-    });
-    this.logger.log(`Feedback tersimpan dengan ID: ${feedback.id} (Model: ${usedModel})`);
-
-    // ── 7. Update skor cache di draft ───────────────────────────────────
-    const updatedDraft = await this.prisma.essayDraft.update({
-      where: { id: draft.id },
-      data: {
-        status: 'DRAFT', // Kembalikan ke DRAFT agar bisa diedit lagi
-        compositeScore: evaluation.compositeScore,
-        structureScore: evaluation.scores.structure,
-        toneScore: evaluation.scores.tone,
-        relevanceScore: evaluation.scores.relevance,
-        originalityScore: evaluation.scores.originality,
-        impactScore: evaluation.scores.impact,
-      },
-    });
-
-    // ── 8. Return gabungan draft + evaluasi ke controller ────────────────
-    return {
-      draft: {
-        id: updatedDraft.id,
-        title: updatedDraft.title,
-        scholarshipTarget: updatedDraft.scholarshipTarget,
-        content: updatedDraft.content,
-        wordCount: updatedDraft.totalWordCount,
-        status: updatedDraft.status,
-        version: updatedDraft.version,
-        scores: {
-          composite: updatedDraft.compositeScore,
-          structure: updatedDraft.structureScore,
-          tone: updatedDraft.toneScore,
-          relevance: updatedDraft.relevanceScore,
-          originality: updatedDraft.originalityScore,
-          impact: updatedDraft.impactScore,
-        },
-        createdAt: updatedDraft.createdAt,
-      },
-      evaluation: {
-        feedbackId: feedback.id,
-        compositeScore: evaluation.compositeScore,
-        scores: evaluation.scores,
-        annotations: evaluation.annotations,
-        overallComment: evaluation.overallComment,
-        topStrengths: evaluation.topStrengths,
-        topImprovements: evaluation.topImprovements,
-        voicePreserved: evaluation.voicePreserved,
-        processingTimeMs,
-      },
-    };
+    return this.persist(run, completion, Date.now() - startTime);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // PUBLIC: Submit esai dengan SSE Streaming respons token demi token
   // ═══════════════════════════════════════════════════════════════════════
 
+  /**
+   * Model failures are reported as an `error` event. Anything thrown (bad
+   * draft, database) is for the caller, which has already sent SSE headers
+   * and must turn it into an `error` event itself.
+   */
   async submitAndEvaluateStream(
     dto: SubmitEssayDto,
-    emitEvent: (event: 'status' | 'chunk' | 'done' | 'error', data: any) => void,
+    userId: string,
+    emitEvent: EmitEvent,
     abortSignal?: AbortSignal,
-  ) {
-    if (!dto.content || dto.content.trim().length === 0) {
-      throw new BadRequestException('Konten esai tidak boleh kosong.');
-    }
-    if (!dto.userId || dto.userId.trim().length === 0) {
-      throw new BadRequestException('userId wajib diisi.');
-    }
-
-    const essayContent = dto.content.trim();
-    const wordCount = essayContent.split(/\s+/).length;
-
+  ): Promise<void> {
     emitEvent('status', { message: 'Menyiapkan draft esai...' });
-
-    let draft;
-    if (dto.draftId) {
-      draft = await this.prisma.essayDraft.findUnique({ where: { id: dto.draftId } });
-      if (!draft || draft.userId !== dto.userId) {
-        throw new BadRequestException('Draft tidak ditemukan atau akses ditolak.');
-      }
-      draft = await this.prisma.essayDraft.update({
-        where: { id: draft.id },
-        data: {
-          title: dto.title?.trim() || draft.title,
-          scholarshipTarget: dto.scholarshipTarget?.trim() || draft.scholarshipTarget,
-          content: essayContent,
-          status: 'IN_REVIEW',
-          totalWordCount: wordCount,
-          version: draft.version + 1,
-        },
-      });
-    } else {
-      draft = await this.prisma.essayDraft.create({
-        data: {
-          userId: dto.userId,
-          title: dto.title?.trim() || 'Esai Tanpa Judul',
-          scholarshipTarget: dto.scholarshipTarget?.trim() || null,
-          content: essayContent,
-          status: 'IN_REVIEW',
-          totalWordCount: wordCount,
-        },
-      });
-    }
-
-    const user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
-    const fingerprint = user?.writingStyleFingerprint;
-    const fingerprintStr = fingerprint
-      ? `\n4. PERHATIKAN Writing Style Fingerprint penulis:\n   - Vocabulary: ${(fingerprint as any).vocabularyLevel}\n   - Sentence Variance: ${(fingerprint as any).sentenceLengthVariance}\n   - Tone: ${(fingerprint as any).tone}\n   - Quirks: ${((fingerprint as any).quirks || []).join(', ')}\n   Pastikan saranmu mempertimbangkan gaya ini.`
-      : `\n4. Jika mahasiswa menggunakan gaya bercerita unik yang efektif, pertahankan. Namun jika bertele-tele, sarankan pemangkasan.`;
-
-    const systemPromptWithFingerprint = SYSTEM_PROMPT.replace('{{FINGERPRINT_SECTION}}', fingerprintStr);
-
-    const isParagraph = dto.mode === 'PARAGRAPH';
-    const textToEvaluate = (isParagraph && dto.targetText) ? dto.targetText.trim() : essayContent;
-
-    const userPrompt = USER_PROMPT_TEMPLATE
-      .replace('{{SCHOLARSHIP_TARGET}}', dto.scholarshipTarget || 'Umum / Tidak ditentukan')
-      .replace('{{EVALUATION_MODE}}', isParagraph ? 'EVALUASI 1 PARAGRAF SPESIFIK' : 'EVALUASI FULL ESAI')
-      .replace('{{ESSAY_CONTENT}}', textToEvaluate);
-
-    let evaluation: AiEvaluationResponse;
-    let rawResponseText = '';
+    const run = await this.prepare(dto, userId);
     const startTime = Date.now();
-    let usedModel = this.geminiModelName;
 
+    let completion: Completion | null;
     try {
-      try {
-        emitEvent('status', { message: 'Menghubungi Gemini AI (Streaming)...' });
-        const model = this.gemini.getGenerativeModel({
-          model: this.geminiModelName,
-          systemInstruction: systemPromptWithFingerprint,
-          generationConfig: {
-            temperature: GENERATION_CONFIG.temperature,
-            topP: GENERATION_CONFIG.top_p,
-            maxOutputTokens: GENERATION_CONFIG.max_tokens,
-            responseMimeType: "application/json",
-          },
-        });
-
-        const streamResult = await model.generateContentStream(userPrompt);
-        for await (const chunk of streamResult.stream) {
-          if (abortSignal?.aborted) {
-            this.logger.warn(`Gemini stream dibatalkan oleh klien (user: ${dto.userId})`);
-            await this.prisma.essayDraft.update({
-              where: { id: draft.id },
-              data: { status: 'DRAFT' },
-            });
-            return;
-          }
-          const text = chunk.text();
-          rawResponseText += text;
-          emitEvent('chunk', { text });
-        }
-        usedModel = this.geminiModelName;
-      } catch (geminiError) {
-        if (abortSignal?.aborted) {
-          await this.prisma.essayDraft.update({
-            where: { id: draft.id },
-            data: { status: 'DRAFT' },
-          });
-          return;
-        }
-
-        const errMsg = geminiError instanceof Error ? geminiError.message : String(geminiError);
-        this.logger.warn(`Gemini stream gagal (${errMsg}). Fallback ke Groq stream...`);
-        emitEvent('status', { message: 'Gemini sibuk, beralih ke Groq AI (Fallback)...' });
-
-        const groqStream = await this.groq.chat.completions.create({
-          model: this.groqModelName,
-          messages: [
-            { role: 'system', content: systemPromptWithFingerprint },
-            { role: 'user', content: userPrompt }
-          ],
-          stream: true,
-          ...GENERATION_CONFIG,
-        });
-
-        for await (const part of groqStream) {
-          if (abortSignal?.aborted) {
-            this.logger.warn(`Groq stream dibatalkan oleh klien (user: ${dto.userId})`);
-            await this.prisma.essayDraft.update({
-              where: { id: draft.id },
-              data: { status: 'DRAFT' },
-            });
-            return;
-          }
-          const text = part.choices[0]?.delta?.content || '';
-          rawResponseText += text;
-          emitEvent('chunk', { text });
-        }
-        usedModel = this.groqModelName;
-      }
-
+      completion = await this.streamCompletion(run, emitEvent, abortSignal);
+    } catch (error) {
+      await this.markIdle(run.draft.id);
       if (abortSignal?.aborted) {
-        await this.prisma.essayDraft.update({
-          where: { id: draft.id },
-          data: { status: 'DRAFT' },
-        });
+        this.logger.warn(`Stream dibatalkan oleh klien (user: ${userId})`);
         return;
       }
-
-      emitEvent('status', { message: 'Menyusun hasil evaluasi dan menyimpan draft...' });
-      evaluation = this.parseAiResponse(rawResponseText);
-    } catch (error) {
-      await this.prisma.essayDraft.update({
-        where: { id: draft.id },
-        data: { status: 'DRAFT' },
-      });
+      this.logger.error(
+        `Evaluasi stream gagal (user: ${userId}): ${error instanceof Error ? error.message : String(error)}`,
+      );
       emitEvent('error', {
-        message: 'Gagal menganalisis esai. AI Provider sedang sibuk, silakan coba lagi.',
+        message:
+          'Gagal menganalisis esai. AI Provider sedang sibuk, silakan coba lagi.',
+        // The draft already exists; the client retries against it instead of creating another.
+        draftId: run.draft.id,
       });
       return;
     }
+    if (!completion) {
+      this.logger.warn(`Stream dibatalkan oleh klien (user: ${userId})`);
+      await this.markIdle(run.draft.id);
+      return;
+    }
 
-    const processingTimeMs = Date.now() - startTime;
-    const promptTokenCount = Math.ceil((systemPromptWithFingerprint.length + userPrompt.length) / 4);
-    const responseTokenCount = Math.ceil(rawResponseText.length / 4);
-
-    const feedback = await this.prisma.aiFeedback.create({
-      data: {
-        draftId: draft.id,
-        feedbackType: isParagraph ? 'PARAGRAPH' : 'FULL_ESSAY',
-        scores: evaluation.scores as object,
-        annotations: evaluation.annotations as object[],
-        overallComment: evaluation.overallComment,
-        voicePreserved: evaluation.voicePreserved,
-        modelVersion: usedModel,
-        promptTokens: promptTokenCount,
-        responseTokens: responseTokenCount,
-        processingTimeMs,
-        rawPrompt: process.env.NODE_ENV === 'development' ? SYSTEM_PROMPT : null,
-        rawResponse: process.env.NODE_ENV === 'development' ? rawResponseText : null,
-      },
+    emitEvent('status', {
+      message: 'Menyusun hasil evaluasi dan menyimpan draft...',
     });
-
-    const updatedDraft = await this.prisma.essayDraft.update({
-      where: { id: draft.id },
-      data: {
-        status: 'DRAFT',
-        compositeScore: evaluation.compositeScore,
-        structureScore: evaluation.scores.structure,
-        toneScore: evaluation.scores.tone,
-        relevanceScore: evaluation.scores.relevance,
-        originalityScore: evaluation.scores.originality,
-        impactScore: evaluation.scores.impact,
-      },
-    });
-
-    emitEvent('done', {
-      draft: {
-        id: updatedDraft.id,
-        title: updatedDraft.title,
-        scholarshipTarget: updatedDraft.scholarshipTarget,
-        content: updatedDraft.content,
-        wordCount: updatedDraft.totalWordCount,
-        status: updatedDraft.status,
-        version: updatedDraft.version,
-        scores: {
-          composite: updatedDraft.compositeScore,
-          structure: updatedDraft.structureScore,
-          tone: updatedDraft.toneScore,
-          relevance: updatedDraft.relevanceScore,
-          originality: updatedDraft.originalityScore,
-          impact: updatedDraft.impactScore,
-        },
-        createdAt: updatedDraft.createdAt,
-      },
-      evaluation: {
-        feedbackId: feedback.id,
-        compositeScore: evaluation.compositeScore,
-        scores: evaluation.scores,
-        annotations: evaluation.annotations,
-        overallComment: evaluation.overallComment,
-        topStrengths: evaluation.topStrengths,
-        topImprovements: evaluation.topImprovements,
-        voicePreserved: evaluation.voicePreserved,
-        processingTimeMs,
-      },
-    });
+    let result: Awaited<ReturnType<EssayService['persist']>>;
+    try {
+      result = await this.persist(run, completion, Date.now() - startTime);
+    } catch (error) {
+      // persist() already freed the draft; report it in-stream with the id so a retry reuses it.
+      this.logger.error(
+        `Gagal menyimpan evaluasi (user: ${userId}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      emitEvent('error', {
+        message: 'Gagal menyimpan hasil evaluasi. Silakan coba lagi.',
+        draftId: run.draft.id,
+      });
+      return;
+    }
+    emitEvent('done', result);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -528,9 +239,21 @@ export class EssayService {
   // ═══════════════════════════════════════════════════════════════════════
 
   async getDraftsByUser(userId: string) {
+    // The list only needs each evaluation's scores; full annotations and
+    // comments come with GET /essay/:id.
     return this.prisma.essayDraft.findMany({
       where: { userId },
-      include: { aiFeedbacks: { orderBy: { createdAt: 'desc' } } },
+      include: {
+        aiFeedbacks: {
+          select: {
+            id: true,
+            feedbackType: true,
+            scores: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
       orderBy: { updatedAt: 'desc' },
     });
   }
@@ -539,7 +262,7 @@ export class EssayService {
   // PUBLIC: Ambil satu draft beserta feedback terakhirnya
   // ═══════════════════════════════════════════════════════════════════════
 
-  async getDraftById(draftId: string, userId?: string) {
+  async getDraftById(draftId: string, userId: string) {
     const draft = await this.prisma.essayDraft.findUnique({
       where: { id: draftId },
       include: {
@@ -547,92 +270,34 @@ export class EssayService {
       },
     });
 
-    if (!draft) {
-      throw new NotFoundException(`Draft dengan ID "${draftId}" tidak ditemukan.`);
+    // One answer for "missing" and "not yours", so draft ids can't be probed.
+    if (!draft || draft.userId !== userId) {
+      throw new NotFoundException(DRAFT_NOT_FOUND);
     }
 
-    if (userId && draft.userId !== userId) {
-      throw new ForbiddenException('Anda tidak memiliki wewenang untuk mengakses draft ini.');
-    }
+    // The whole-essay evaluation before the latest one, so a reopened draft
+    // can show its score change (only the latest feedback is sent in full).
+    const latestId = draft.aiFeedbacks[0]?.id;
+    const previousFullEssay = latestId
+      ? await this.prisma.aiFeedback.findFirst({
+          where: { draftId, feedbackType: 'FULL_ESSAY', id: { not: latestId } },
+          orderBy: { createdAt: 'desc' },
+          select: { scores: true, createdAt: true },
+        })
+      : null;
 
-    return draft;
+    return { ...draft, previousFullEssay };
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // PRIVATE: Parse & validasi JSON respons dari AI
-  // ═══════════════════════════════════════════════════════════════════════
-
-  private parseAiResponse(rawText: string): AiEvaluationResponse {
-    // Bersihkan kemungkinan markdown fence yang dibungkus AI atau teks tambahan di awal/akhir
-    let cleanText = rawText.trim();
-    const firstBrace = cleanText.indexOf('{');
-    const lastBrace = cleanText.lastIndexOf('}');
-    
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-      cleanText = cleanText.slice(firstBrace, lastBrace + 1);
+  /** Throws a 404 unless the draft exists and belongs to the user (one message for both, so ids can't be probed). */
+  async assertDraftOwner(draftId: string, userId: string): Promise<void> {
+    const draft = await this.prisma.essayDraft.findUnique({
+      where: { id: draftId },
+      select: { userId: true },
+    });
+    if (!draft || draft.userId !== userId) {
+      throw new NotFoundException(DRAFT_NOT_FOUND);
     }
-    
-    // Parse JSON
-    let parsed: AiEvaluationResponse;
-    try {
-      parsed = JSON.parse(cleanText) as AiEvaluationResponse;
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e);
-      this.logger.error(`Gagal JSON.parse: ${errMsg}`);
-      this.logger.error(`Teks JSON (potongan): ${cleanText.substring(0, 1000)}...`);
-      throw new Error(`Respons AI bukan JSON valid: ${errMsg}`);
-    }
-
-    // Validasi field wajib
-    if (!parsed.scores || typeof parsed.scores !== 'object') {
-      throw new Error('Respons AI tidak mengandung field "scores".');
-    }
-
-    const requiredScoreFields: (keyof AiScores)[] = [
-      'structure',
-      'tone',
-      'relevance',
-      'originality',
-      'impact',
-    ];
-    for (const field of requiredScoreFields) {
-      if (typeof parsed.scores[field] !== 'number') {
-        throw new Error(`Skor "${field}" tidak ditemukan atau bukan angka.`);
-      }
-      // Clamp ke range 1-100
-      parsed.scores[field] = Math.max(1, Math.min(100, Math.round(parsed.scores[field])));
-    }
-
-    // Hitung composite score (rata-rata 5 dimensi)
-    const scoreValues = requiredScoreFields.map((f) => parsed.scores[f]);
-    parsed.compositeScore = Math.round(
-      scoreValues.reduce((sum, v) => sum + v, 0) / scoreValues.length,
-    );
-
-    // Validasi annotations
-    if (!Array.isArray(parsed.annotations)) {
-      parsed.annotations = [];
-    }
-
-    // Validasi overallComment
-    if (typeof parsed.overallComment !== 'string' || parsed.overallComment.length === 0) {
-      parsed.overallComment = 'Evaluasi selesai. Lihat skor dan anotasi untuk detail.';
-    }
-
-    // Validasi topStrengths & topImprovements
-    if (!Array.isArray(parsed.topStrengths)) {
-      parsed.topStrengths = [];
-    }
-    if (!Array.isArray(parsed.topImprovements)) {
-      parsed.topImprovements = [];
-    }
-
-    // Validasi voicePreserved
-    if (typeof parsed.voicePreserved !== 'boolean') {
-      parsed.voicePreserved = true;
-    }
-
-    return parsed;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -644,54 +309,83 @@ export class EssayService {
       where: { id: draftId },
     });
 
-    if (!draft) {
-      throw new NotFoundException(`Draft dengan ID "${draftId}" tidak ditemukan.`);
-    }
-
-    if (draft.userId !== userId) {
-      throw new ForbiddenException('Anda tidak memiliki wewenang untuk mengakses draft ini.');
+    // One answer for "missing" and "not yours", so draft ids can't be probed.
+    if (!draft || draft.userId !== userId) {
+      throw new NotFoundException(DRAFT_NOT_FOUND);
     }
 
     if (!draft.content || draft.content.trim().length < 100) {
       throw new BadRequestException('Esai terlalu pendek untuk dianalisis.');
     }
 
-    const { STYLE_FINGERPRINT_PROMPT } = await import('./ai.config.js');
-    const prompt = STYLE_FINGERPRINT_PROMPT.replace('{{ESSAY_CONTENT}}', draft.content);
+    const prompt = fillTemplate(STYLE_FINGERPRINT_PROMPT, {
+      ESSAY_CONTENT: draft.content,
+    });
 
+    // Stored, then placed in every later system prompt: keep only known, bounded fields.
+    const parseFingerprint = (text: string): StyleFingerprint => {
+      const parsed = sanitizeFingerprint(JSON.parse(extractJsonObject(text)));
+      if (!parsed) throw new Error('Fingerprint tidak valid.');
+      return parsed;
+    };
+
+    let fingerprint: StyleFingerprint;
     try {
-      this.logger.log('Men-generate fingerprint gaya penulisan dengan Gemini...');
-      const model = this.gemini.getGenerativeModel({
-        model: this.geminiModelName,
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-      });
-
-      const result = await model.generateContent(prompt);
-      const rawText = result.response.text();
-      
-      let cleanText = rawText.trim();
-      const firstBrace = cleanText.indexOf('{');
-      const lastBrace = cleanText.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-        cleanText = cleanText.slice(firstBrace, lastBrace + 1);
-      }
-
-      const fingerprint = JSON.parse(cleanText);
-
-      await this.prisma.user.update({
+      const owner = await this.prisma.user.findUnique({
         where: { id: userId },
-        data: { writingStyleFingerprint: fingerprint as any },
+        select: { plan: true, role: true },
       });
+      const limited = isLimited(owner);
+      const viaGemini = async () => {
+        const model = this.gemini.getGenerativeModel({
+          model: this.geminiModelName,
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: 'application/json',
+          },
+        });
+        const result = await model.generateContent(prompt);
+        return parseFingerprint(result.response.text());
+      };
+      const viaFallbacks = async (order: FallbackName[]) =>
+        (
+          await this.fallbackChat(
+            [{ role: 'user', content: prompt }],
+            parseFingerprint,
+            undefined,
+            order,
+          )
+        ).parsed;
 
-      this.logger.log(`Fingerprint berhasil disimpan untuk user ${userId}`);
-      return fingerprint;
+      this.logger.log(
+        `Men-generate fingerprint gaya penulisan (${limited ? 'akses terbatas' : 'Gemini'} dulu)...`,
+      );
+      try {
+        fingerprint = limited
+          ? await viaFallbacks(LIMITED_ORDER)
+          : await viaGemini();
+      } catch (firstError) {
+        this.logger.warn(
+          `Fingerprint gagal di penyedia pertama (${describe(firstError)}). Mencoba penyedia lain...`,
+        );
+        fingerprint = limited
+          ? await viaGemini()
+          : await viaFallbacks(DEFAULT_ORDER);
+      }
     } catch (err) {
       this.logger.error('Gagal generate fingerprint:', err);
-      throw new InternalServerErrorException('Gagal menganalisis gaya penulisan.');
+      throw new InternalServerErrorException(
+        'Gagal menganalisis gaya penulisan.',
+      );
     }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { writingStyleFingerprint: { ...fingerprint } },
+    });
+
+    this.logger.log(`Fingerprint berhasil disimpan untuk user ${userId}`);
+    return fingerprint;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -699,45 +393,502 @@ export class EssayService {
   // ═══════════════════════════════════════════════════════════════════════
 
   async getAnalytics() {
-    const feedbacks = await this.prisma.aiFeedback.findMany({
-      select: {
+    const groups = await this.prisma.aiFeedback.groupBy({
+      by: ['modelVersion'],
+      _count: { _all: true },
+      _sum: {
         promptTokens: true,
         responseTokens: true,
         processingTimeMs: true,
-        modelVersion: true,
-        createdAt: true,
       },
     });
 
-    const totalEvaluations = feedbacks.length;
+    let totalEvaluations = 0;
     let totalPromptTokens = 0;
     let totalResponseTokens = 0;
     let totalProcessingTimeMs = 0;
-    const modelBreakdown: Record<string, number> = {};
     let estimatedCostUsd = 0;
+    const modelBreakdown: Record<string, number> = {};
 
-    for (const fb of feedbacks) {
-      totalPromptTokens += fb.promptTokens;
-      totalResponseTokens += fb.responseTokens;
-      totalProcessingTimeMs += fb.processingTimeMs;
-      modelBreakdown[fb.modelVersion] = (modelBreakdown[fb.modelVersion] || 0) + 1;
+    for (const g of groups) {
+      const prompt = g._sum.promptTokens ?? 0;
+      const response = g._sum.responseTokens ?? 0;
+      totalEvaluations += g._count._all;
+      totalPromptTokens += prompt;
+      totalResponseTokens += response;
+      totalProcessingTimeMs += g._sum.processingTimeMs ?? 0;
+      modelBreakdown[g.modelVersion] = g._count._all;
 
-      const pricing = AI_PRICING_CONFIG[fb.modelVersion] || AI_PRICING_CONFIG['gemini-2.5-flash'];
+      const pricing =
+        AI_PRICING_CONFIG[g.modelVersion] || AI_PRICING_CONFIG[GEMINI_MODEL];
       estimatedCostUsd +=
-        (fb.promptTokens / 1_000_000) * pricing.inputPerMillionUsd +
-        (fb.responseTokens / 1_000_000) * pricing.outputPerMillionUsd;
+        (prompt / 1_000_000) * pricing.inputPerMillionUsd +
+        (response / 1_000_000) * pricing.outputPerMillionUsd;
     }
-
-    const totalTokens = totalPromptTokens + totalResponseTokens;
 
     return {
       totalEvaluations,
       totalPromptTokens,
       totalResponseTokens,
-      totalTokens,
-      averageProcessingTimeMs: totalEvaluations > 0 ? Math.round(totalProcessingTimeMs / totalEvaluations) : 0,
+      totalTokens: totalPromptTokens + totalResponseTokens,
+      averageProcessingTimeMs:
+        totalEvaluations > 0
+          ? Math.round(totalProcessingTimeMs / totalEvaluations)
+          : 0,
       estimatedCostUsd: Number(estimatedCostUsd.toFixed(5)),
       modelBreakdown,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PRIVATE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /** Saves the text (new draft, or the user's existing one) and assembles both prompts. */
+  private async prepare(
+    dto: SubmitEssayDto,
+    userId: string,
+  ): Promise<PreparedRun> {
+    const content = dto.content.trim();
+    if (!content) {
+      throw new BadRequestException('Konten esai tidak boleh kosong.');
+    }
+    const totalWordCount = content.split(/\s+/).length;
+    this.logger.log(
+      `Menerima esai dari user ${userId} — ${totalWordCount} kata.`,
+    );
+
+    // Read before the draft is written, so a failure here leaves nothing IN_REVIEW.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { writingStyleFingerprint: true, plan: true, role: true },
+    });
+
+    // The version is not bumped here; persist() sets it once an evaluation succeeds.
+    let draft: EssayDraft;
+    if (dto.draftId) {
+      await this.assertDraftOwner(dto.draftId, userId);
+      draft = await this.prisma.essayDraft.update({
+        where: { id: dto.draftId },
+        data: {
+          title: dto.title?.trim() || undefined,
+          scholarshipTarget: dto.scholarshipTarget?.trim() || undefined,
+          content,
+          status: 'IN_REVIEW',
+          totalWordCount,
+        },
+      });
+    } else {
+      draft = await this.prisma.essayDraft.create({
+        data: {
+          userId,
+          title: dto.title?.trim() || 'Esai Tanpa Judul',
+          scholarshipTarget: dto.scholarshipTarget?.trim() || null,
+          content,
+          status: 'IN_REVIEW',
+          totalWordCount,
+        },
+      });
+    }
+
+    const isParagraph = dto.mode === 'PARAGRAPH';
+    const passage = isParagraph ? dto.targetText?.trim() : undefined;
+    const { numbered, count } = numberSentences(passage || content);
+
+    return {
+      draft,
+      isParagraph,
+      sentenceCount: count,
+      limited: isLimited(user),
+      systemPrompt: fillTemplate(SYSTEM_PROMPT, {
+        FINGERPRINT_SECTION: fingerprintSection(
+          sanitizeFingerprint(user?.writingStyleFingerprint),
+        ),
+      }),
+      userPrompt: fillTemplate(USER_PROMPT_TEMPLATE, {
+        SCHOLARSHIP_TARGET:
+          dto.scholarshipTarget?.trim() || 'Umum / Tidak ditentukan',
+        EVALUATION_MODE: isParagraph
+          ? 'EVALUASI 1 PARAGRAF SPESIFIK'
+          : 'EVALUASI FULL ESAI',
+        ESSAY_CONTENT: numbered,
+      }),
+    };
+  }
+
+  private geminiModel(systemInstruction: string) {
+    return this.gemini.getGenerativeModel({
+      model: this.geminiModelName,
+      systemInstruction,
+      generationConfig: {
+        temperature: GENERATION_CONFIG.temperature,
+        topP: GENERATION_CONFIG.top_p,
+        maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+        responseMimeType: 'application/json',
+      },
+    });
+  }
+
+  /**
+   * Logs why Gemini stopped and what it spent. Throws unless it finished
+   * normally, so a truncated answer (MAX_TOKENS) or a blocked one falls back
+   * to the fallbacks instead of failing at JSON.parse.
+   */
+  private geminiUsage(response: EnhancedGenerateContentResponse): {
+    promptTokens: number;
+    responseTokens: number;
+  } {
+    const finishReason = response.candidates?.[0]?.finishReason;
+    // 2.5 models report thinking separately; it is billed as output and counts against maxOutputTokens.
+    const usage: GeminiUsage | undefined = response.usageMetadata;
+    const thinking = usage?.thoughtsTokenCount ?? 0;
+    this.logger.log(
+      `Gemini selesai: finishReason=${finishReason} prompt=${usage?.promptTokenCount ?? '?'} ` +
+        `output=${usage?.candidatesTokenCount ?? '?'} thinking=${thinking}`,
+    );
+    if (finishReason !== FinishReason.STOP) {
+      throw new Error(
+        `Gemini berhenti sebelum selesai (finishReason=${finishReason}).`,
+      );
+    }
+    return {
+      promptTokens: usage?.promptTokenCount ?? 0,
+      responseTokens: (usage?.candidatesTokenCount ?? 0) + thinking,
+    };
+  }
+
+  /**
+   * Non-streaming completion. Full-access accounts: Gemini, then the
+   * fallbacks. Limited accounts: the cheap fallbacks first, Gemini last.
+   */
+  private async complete(run: PreparedRun): Promise<Completion> {
+    if (run.limited) {
+      try {
+        this.logger.log('Akses terbatas: mencoba penyedia murah lebih dulu...');
+        return await this.fallbackComplete(run, undefined, LIMITED_ORDER);
+      } catch (error) {
+        this.logger.warn(
+          `Penyedia murah gagal (${describe(error)}). Beralih ke Gemini...`,
+        );
+        return this.geminiComplete(run);
+      }
+    }
+    try {
+      return await this.geminiComplete(run);
+    } catch (geminiError) {
+      this.logger.warn(
+        `Gemini gagal (${describe(geminiError)}). Beralih ke fallback...`,
+      );
+      return this.fallbackComplete(run);
+    }
+  }
+
+  private async geminiComplete(run: PreparedRun): Promise<Completion> {
+    this.logger.log('Mencoba evaluasi menggunakan Gemini...');
+    const result = await this.geminiModel(run.systemPrompt).generateContent(
+      run.userPrompt,
+    );
+    const tokens = this.geminiUsage(result.response);
+    const text = result.response.text();
+    return {
+      text,
+      model: this.geminiModelName,
+      ...tokens,
+      evaluation: parseEvaluation(text, run.sentenceCount),
+    };
+  }
+
+  /** The fallback providers that have an API key, in the order given. */
+  private fallbackProviders(order: FallbackName[]) {
+    const all = {
+      DeepSeek: {
+        client: this.deepseek,
+        model: DEEPSEEK_MODEL,
+        extra: DEEPSEEK_EXTRA_BODY,
+      },
+      Groq: { client: this.groq, model: GROQ_MODEL, extra: GROQ_EXTRA_BODY },
+    };
+    return order.flatMap((name) => {
+      const { client, ...rest } = all[name];
+      return client ? [{ name, client, ...rest }] : [];
+    });
+  }
+
+  /**
+   * Tries each fallback in turn until one returns usable output. Deliberately
+   * not streamed: JSON mode combined with streaming is undocumented for these
+   * providers, and a fallback must not depend on an untested combination.
+   * `parse` runs inside each attempt, so unusable JSON moves on to the next
+   * provider instead of failing the request.
+   */
+  private async fallbackChat<T>(
+    messages: ChatMessage[],
+    parse: (text: string) => T,
+    signal?: AbortSignal,
+    order: FallbackName[] = DEFAULT_ORDER,
+  ): Promise<ProviderResult<T>> {
+    const providers = this.fallbackProviders(order);
+    if (providers.length === 0) {
+      throw new Error('Tidak ada provider fallback yang dikonfigurasi.');
+    }
+    const failures: string[] = [];
+    for (const provider of providers) {
+      try {
+        const result = await provider.client.chat.completions.create(
+          {
+            model: provider.model,
+            messages,
+            ...GENERATION_CONFIG,
+            ...provider.extra,
+          } as ChatCompletionCreateParamsNonStreaming,
+          { signal },
+        );
+        const text = result.choices[0]?.message?.content || '';
+        const parsed = parse(text);
+        return {
+          text,
+          model: provider.model,
+          promptTokens:
+            result.usage?.prompt_tokens ??
+            estimateTokens(messages.map((m) => m.content).join('')),
+          responseTokens:
+            result.usage?.completion_tokens ?? estimateTokens(text),
+          parsed,
+        };
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        this.logger.warn(`${provider.name} gagal (${describe(error)}).`);
+        failures.push(`${provider.name}: ${describe(error)}`);
+      }
+    }
+    throw new Error(`Semua provider fallback gagal (${failures.join('; ')}).`);
+  }
+
+  private async fallbackComplete(
+    run: PreparedRun,
+    signal?: AbortSignal,
+    order: FallbackName[] = DEFAULT_ORDER,
+  ): Promise<Completion> {
+    const { parsed, ...rest } = await this.fallbackChat(
+      [
+        { role: 'system', content: run.systemPrompt },
+        { role: 'user', content: run.userPrompt },
+      ],
+      (text) => parseEvaluation(text, run.sentenceCount),
+      signal,
+      order,
+    );
+    return { ...rest, evaluation: parsed };
+  }
+
+  /** Gemini, streamed chunk by chunk. Null when the client aborted. */
+  private async geminiStream(
+    run: PreparedRun,
+    emitEvent: EmitEvent,
+    signal?: AbortSignal,
+  ): Promise<Completion | null> {
+    emitEvent('status', { message: 'Menghubungi Gemini AI (Streaming)...' });
+    const streamResult = await this.geminiModel(
+      run.systemPrompt,
+    ).generateContentStream(run.userPrompt, { signal });
+    // The SDK's aggregate `response` rejects when the stream fails or is
+    // aborted. On those paths nothing awaits it, and an unhandled rejection
+    // terminates the Node process, so mark it handled up front.
+    streamResult.response.catch(() => undefined);
+    let text = '';
+    for await (const chunk of streamResult.stream) {
+      if (signal?.aborted) break;
+      const part = chunk.text();
+      text += part;
+      emitEvent('chunk', { text: part });
+    }
+    if (signal?.aborted) return null;
+    const tokens = this.geminiUsage(await streamResult.response);
+    return {
+      text,
+      model: this.geminiModelName,
+      ...tokens,
+      evaluation: parseEvaluation(text, run.sentenceCount),
+    };
+  }
+
+  /** A fallback answer, announced like a stream so the client can show progress. */
+  private async streamFallback(
+    run: PreparedRun,
+    emitEvent: EmitEvent,
+    order: FallbackName[],
+    signal?: AbortSignal,
+  ): Promise<Completion | null> {
+    // A fresh request: a failed provider's partial JSON is never glued onto this one's.
+    const completion = await this.fallbackComplete(run, signal, order);
+    if (signal?.aborted) return null;
+    // The client only uses chunks as a progress count.
+    emitEvent('chunk', { text: completion.text });
+    return completion;
+  }
+
+  /**
+   * Streaming completion, in the same order as `complete`. Null when the
+   * client aborted.
+   */
+  private async streamCompletion(
+    run: PreparedRun,
+    emitEvent: EmitEvent,
+    signal?: AbortSignal,
+  ): Promise<Completion | null> {
+    if (run.limited) {
+      try {
+        emitEvent('status', { message: 'Menghubungi AI...' });
+        return await this.streamFallback(run, emitEvent, LIMITED_ORDER, signal);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        this.logger.warn(
+          `Penyedia murah gagal (${describe(error)}). Beralih ke Gemini...`,
+        );
+        return this.geminiStream(run, emitEvent, signal);
+      }
+    }
+    try {
+      return await this.geminiStream(run, emitEvent, signal);
+    } catch (geminiError) {
+      if (signal?.aborted) throw geminiError;
+      this.logger.warn(
+        `Gemini stream gagal (${describe(geminiError)}). Beralih ke fallback...`,
+      );
+      emitEvent('status', {
+        message: 'Gemini sibuk, beralih ke AI cadangan (Fallback)...',
+      });
+      return this.streamFallback(run, emitEvent, DEFAULT_ORDER, signal);
+    }
+  }
+
+  /** Puts a draft back to editable after a failed or cancelled run. */
+  private async markIdle(draftId: string): Promise<void> {
+    try {
+      await this.prisma.essayDraft.update({
+        where: { id: draftId },
+        data: { status: 'DRAFT' },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Gagal mengembalikan status draft ${draftId}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  /**
+   * Saves the evaluation and the draft's cached scores together, and returns
+   * the client payload. On failure the draft is freed and the error rethrown.
+   */
+  private async persist(
+    run: PreparedRun,
+    completion: Completion,
+    processingTimeMs: number,
+  ) {
+    const { evaluation } = completion;
+    this.logger.log(
+      `Berhasil menggunakan ${completion.model} dalam ${processingTimeMs}ms ` +
+        `(prompt: ${completion.promptTokens} token, response: ${completion.responseTokens} token)`,
+    );
+    const isDev = process.env.NODE_ENV === 'development';
+
+    let saved: { feedback: AiFeedback; draft: EssayDraft };
+    try {
+      saved = await this.prisma.$transaction(async (tx) => {
+        // Locking the draft row first serialises concurrent evaluations of one
+        // draft, so the count below sees every evaluation already committed.
+        const locked = await tx.essayDraft.update({
+          where: { id: run.draft.id },
+          data: { status: 'DRAFT' },
+        });
+        const earlier = await tx.aiFeedback.count({
+          where: { draftId: run.draft.id },
+        });
+        const feedback = await tx.aiFeedback.create({
+          data: {
+            draftId: run.draft.id,
+            feedbackType: run.isParagraph ? 'PARAGRAPH' : 'FULL_ESSAY',
+            topStrengths: evaluation.topStrengths,
+            topImprovements: evaluation.topImprovements,
+            scores: { ...evaluation.scores },
+            annotations: evaluation.annotations.map((a) => ({ ...a })),
+            overallComment: evaluation.overallComment,
+            voicePreserved: evaluation.voicePreserved,
+            modelVersion: completion.model,
+            promptTokens: completion.promptTokens,
+            responseTokens: completion.responseTokens,
+            processingTimeMs,
+            // Simpan data mentah hanya di development untuk debugging
+            rawPrompt: isDev ? run.systemPrompt : null,
+            rawResponse: isDev ? completion.text : null,
+          },
+        });
+        // Only a saved evaluation moves the version, and only forward: the
+        // first one keeps the draft's initial version, each later one adds 1.
+        const version = earlier === 0 ? locked.version : locked.version + 1;
+        const draft = await tx.essayDraft.update({
+          where: { id: run.draft.id },
+          data: {
+            status: 'DRAFT',
+            version,
+            compositeScore: evaluation.compositeScore,
+            structureScore: evaluation.scores.structure,
+            toneScore: evaluation.scores.tone,
+            relevanceScore: evaluation.scores.relevance,
+            originalityScore: evaluation.scores.originality,
+            impactScore: evaluation.scores.impact,
+          },
+        });
+        return { feedback, draft };
+      });
+    } catch (error) {
+      await this.markIdle(run.draft.id);
+      throw error;
+    }
+    const { feedback, draft } = saved;
+    this.logger.log(
+      `Feedback tersimpan dengan ID: ${feedback.id} (v${draft.version}, model: ${completion.model})`,
+    );
+
+    return this.toResult(draft, feedback, evaluation, processingTimeMs);
+  }
+
+  private toResult(
+    draft: EssayDraft,
+    feedback: AiFeedback,
+    evaluation: AiEvaluationResponse,
+    processingTimeMs: number,
+  ) {
+    return {
+      draft: {
+        id: draft.id,
+        title: draft.title,
+        scholarshipTarget: draft.scholarshipTarget,
+        content: draft.content,
+        wordCount: draft.totalWordCount,
+        status: draft.status,
+        version: draft.version,
+        scores: {
+          composite: draft.compositeScore,
+          structure: draft.structureScore,
+          tone: draft.toneScore,
+          relevance: draft.relevanceScore,
+          originality: draft.originalityScore,
+          impact: draft.impactScore,
+        },
+        createdAt: draft.createdAt,
+      },
+      evaluation: {
+        feedbackId: feedback.id,
+        compositeScore: evaluation.compositeScore,
+        scores: evaluation.scores,
+        annotations: evaluation.annotations,
+        overallComment: evaluation.overallComment,
+        topStrengths: evaluation.topStrengths,
+        topImprovements: evaluation.topImprovements,
+        voicePreserved: evaluation.voicePreserved,
+        processingTimeMs,
+      },
     };
   }
 }

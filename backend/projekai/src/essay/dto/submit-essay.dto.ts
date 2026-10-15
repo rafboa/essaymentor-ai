@@ -1,14 +1,19 @@
-import { IsNotEmpty, IsString, IsOptional, MinLength, MaxLength, IsIn } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  MinLength,
+  MaxLength,
+  IsIn,
+} from 'class-validator';
 
 export class SubmitEssayDto {
-  /** ID user pemilik esai (akan di-override oleh JWT di controller) */
-  @IsOptional()
-  @IsString()
-  userId?: string;
+  // The owner is never taken from the body: it comes from the JWT.
 
   /** ID draft jika ingin mengupdate esai yang sudah ada (v1 -> v2) */
   @IsOptional()
   @IsString()
+  @MaxLength(64)
   draftId?: string;
 
   /** Judul esai, opsional, fallback ke "Esai Tanpa Judul". */
@@ -27,12 +32,16 @@ export class SubmitEssayDto {
   @IsString({ message: 'Konten esai harus berupa teks.' })
   @IsNotEmpty({ message: 'Konten esai tidak boleh kosong.' })
   @MinLength(50, { message: 'Esai terlalu pendek (minimal 50 karakter).' })
-  @MaxLength(25000, { message: 'Esai melebihi batas maksimum 25.000 karakter.' })
+  @MaxLength(25000, {
+    message: 'Esai melebihi batas maksimum 25.000 karakter.',
+  })
   content!: string;
 
   /** Mode evaluasi: 'FULL_ESSAY' atau 'PARAGRAPH'. Default 'FULL_ESSAY' */
   @IsOptional()
-  @IsIn(['FULL_ESSAY', 'PARAGRAPH'], { message: 'Mode evaluasi harus FULL_ESSAY atau PARAGRAPH.' })
+  @IsIn(['FULL_ESSAY', 'PARAGRAPH'], {
+    message: 'Mode evaluasi harus FULL_ESSAY atau PARAGRAPH.',
+  })
   mode?: 'FULL_ESSAY' | 'PARAGRAPH';
 
   /** Jika mode = 'PARAGRAPH', kirim teks paragraf spesifik di sini */

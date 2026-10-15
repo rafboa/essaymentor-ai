@@ -4,14 +4,14 @@
 
 ### *Platform Evaluasi Esai Beasiswa Cerdas Berbasis AI*
 
-Platform bimbingan dan evaluasi esai beasiswa berbasis kecerdasan buatan (Gemini 2.5 Flash & Groq Llama 3.3) yang dirancang untuk membantu mahasiswa menyusun esai yang persuasif, terstruktur, dan berbobot tanpa menghilangkan keaslian gaya tulisan (personal voice).
+Platform bimbingan dan evaluasi esai beasiswa berbasis kecerdasan buatan (Gemini 3.5 Flash-Lite, dengan cadangan DeepSeek dan Groq) yang dirancang untuk membantu mahasiswa menyusun esai yang persuasif, terstruktur, dan berbobot tanpa menghilangkan keaslian gaya tulisan (personal voice).
 
 [![Frontend](https://img.shields.io/badge/Frontend-Next.js_15_App_Router-000000?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![Backend](https://img.shields.io/badge/Backend-NestJS_11-E0234E?style=for-the-badge&logo=nestjs)](https://nestjs.com/)
 [![Database](https://img.shields.io/badge/Database-MySQL_8-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
 [![ORM](https://img.shields.io/badge/ORM-Prisma_5.22-2D3748?style=for-the-badge&logo=prisma)](https://www.prisma.io/)
-[![Primary AI](https://img.shields.io/badge/Primary_AI-Gemini_2.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
-[![Fallback AI](https://img.shields.io/badge/Fallback_AI-Groq_Llama_3.3-F55036?style=for-the-badge&logo=openai&logoColor=white)](https://groq.com/)
+[![Primary AI](https://img.shields.io/badge/Primary_AI-Gemini_3.5_Flash--Lite-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
+[![Fallback AI](https://img.shields.io/badge/Fallback_AI-DeepSeek_%2B_Groq-F55036?style=for-the-badge&logo=openai&logoColor=white)](https://api-docs.deepseek.com/)
 
 **Frontend Runtime:** Bun &nbsp;·&nbsp; **Backend Runtime:** Node.js (npm) &nbsp;·&nbsp; **Lisensi:** MIT
 
@@ -40,13 +40,14 @@ Menulis esai beasiswa bergengsi (seperti LPDP, Fulbright, Chevening, Erasmus Mun
 **EssayMentor AI hadir dengan pendekatan berbeda:**
 - **Evaluator, Bukan Ghostwriter:** AI bertindak sebagai mentor berpengalaman yang memberikan skor objektif, catatan kritis, dan anotasi per kalimat tanpa menulis ulang kepribadian mahasiswa.
 - **Preservasi Suara Asli (Writing Style Fingerprint):** Mengidentifikasi karakteristik unik kosakata, ritme kalimat, dan gaya bercerita penulis agar saran yang diberikan tetap selaras dengan karakter mahasiswa.
-- **Resiliensi Tinggi:** Menggunakan sistem fallback otomatis dari Google Gemini 2.5 Flash ke Groq Llama 3.3 jika terjadi lonjakan trafik atau limit kuota.
+- **Resiliensi Tinggi:** Menggunakan sistem fallback otomatis dari Google Gemini 3.5 Flash-Lite ke DeepSeek, lalu ke Groq (gpt-oss-120b), jika terjadi lonjakan trafik atau limit kuota.
 
 ---
 
 ## 🚀 Fitur Unggulan
 
 - **Real-Time Streaming Evaluation (SSE):** Respons evaluasi dikirimkan secara live token-demi-token ke browser menggunakan Server-Sent Events, dilengkapi penanganan pemutusan koneksi otomatis (*client disconnect cancellation*) untuk menghemat resource.
+- **Routing AI Berdasarkan Paket Akses:** Setiap akun punya `plan` (`FREE` secara default, atau `PRO`). Akun `FREE` dilayani model murah lebih dulu (Groq, lalu DeepSeek) dan Gemini hanya sebagai pilihan terakhir; akun `PRO` dan `ADMIN` dilayani Gemini lebih dulu, lalu DeepSeek dan Groq. Penyedia tanpa API key dilewati, dan jawaban yang kosong atau bukan JSON valid otomatis dilempar ke penyedia berikutnya.
 - **Matriks Evaluasi 5 Dimensi:**
   1. *Structure* (Struktur & Alur Logika)
   2. *Tone* (Kesesuaian Nada & Formalitas)
@@ -73,8 +74,9 @@ flowchart LR
     B -->|Middleware| C["Helmet + Rate Limiter + CORS"]
     C -->|JWT Auth & RBAC| D["Essay Orchestrator"]
     D -->|Prisma ORM| E[("MySQL 8 Database")]
-    D -->|Primary Stream| F["Google Gemini 2.5 Flash"]
-    F -.->|Otomatis Fallback jika Sibuk| G["Groq Llama 3.3 70B"]
+    D -->|Primary Stream| F["Google Gemini 3.5 Flash-Lite"]
+    F -.->|Otomatis Fallback jika Sibuk| G["DeepSeek Flash"]
+    G -.->|Fallback berikutnya| H["Groq gpt-oss-120b"]
 ```
 
 ---
@@ -89,8 +91,8 @@ flowchart LR
 | **Backend Framework** | NestJS 11 | API Gateway, dependensi modular, middleware |
 | **Backend Runtime** | Node.js 20+ (npm) | Runtime enterprise backend |
 | **Database & ORM** | MySQL 8.0 & Prisma 5.22 | Skema relasional, migrasi tipe aman, indexing |
-| **AI Primary Engine** | Google Gemini 2.5 Flash | Evaluasi penalaran cepat dan JSON terstruktur |
-| **AI Fallback Engine** | Groq (Llama 3.3 70B Versatile) | Cadangan inferensi berkecepatan tinggi |
+| **AI Primary Engine** | Google Gemini 3.5 Flash-Lite | Evaluasi penalaran cepat dan JSON terstruktur |
+| **AI Fallback Engine** | DeepSeek Flash, lalu Groq (gpt-oss-120b) | Cadangan murah dan cepat; provider tanpa API key dilewati |
 | **Keamanan** | Helmet, Throttler, Class-Validator | Proteksi OWASP Top 10 API Security |
 
 ---
@@ -164,17 +166,29 @@ Buka file `.env` dan sesuaikan nilainya:
 ```env
 DATABASE_URL="mysql://username:password@localhost:3306/projekai"
 GEMINI_API_KEY="api-key-google-anda"
+DEEPSEEK_API_KEY="api-key-deepseek-anda"
 GROQ_API_KEY="api-key-groq-anda"
 JWT_SECRET="kunci-rahasia-jwt-acak-minimal-32-karakter"
 FRONTEND_URL="http://localhost:3001"
 PORT=3000
+SEED_USER_PASSWORD="kata-sandi-akun-demo"
+SEED_ADMIN_PASSWORD="kata-sandi-akun-admin"
 ```
+
+`JWT_SECRET` wajib (minimal 32 karakter); server tidak mau berjalan tanpanya. Jangan memakai contoh di atas; buat yang acak, misalnya dengan `openssl rand -hex 32`.
 
 Sinkronkan database dengan Prisma:
 ```bash
 npx prisma generate
 npx prisma db push
 ```
+
+Buat akun demo (`demo@essaymentor.test`, paket `FREE`) dan admin (`admin@essaymentor.test`, paket `PRO`) dengan kata sandi dari `SEED_*_PASSWORD`. Aman dijalankan ulang:
+```bash
+npm run seed
+```
+
+Untuk menaikkan akun ke paket `PRO` (Gemini lebih dulu), ubah kolom `plan` di tabel `users`, misalnya `UPDATE users SET plan = 'PRO' WHERE email = '...';`. Migrasi `user_plan` diterapkan lewat `npx prisma migrate deploy`.
 
 Jalankan server backend:
 ```bash
@@ -232,7 +246,7 @@ Aplikasi ini telah melalui audit keamanan menyeluruh dan menerapkan praktik terb
 2. **Reverse Proxy Trust:** Menghindari *IP Collapsing* saat dideploy di balik Nginx, Cloudflare, atau Railway (`trust proxy: 1`).
 3. **Penyaringan Input (Class-Validator):** Payload divalidasi secara otomatis. Field esai dibatasi maksimal **25.000 karakter** untuk mencegah serangan Denial of Wallet.
 4. **Header Keamanan (Helmet):** Mengaktifkan proteksi CSP, HSTS, X-Frame-Options, dan X-Content-Type-Options.
-5. **Role-Based Access Control (RBAC):** Membatasi data operasional sensitif (biaya API dan analitik global) hanya untuk akun administrator.
+5. **Role-Based Access Control (RBAC):** Membatasi data operasional sensitif (biaya API dan analitik global) hanya untuk akun administrator. Paket akses (`plan`) hanya menentukan urutan penyedia AI, bukan hak akses data.
 6. **Proteksi IDOR:** Memverifikasi kepemilikan draf sebelum mengizinkan pembacaan atau analisis sidik jari.
 
 ---

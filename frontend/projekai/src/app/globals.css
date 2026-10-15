@@ -1,318 +1,370 @@
 @import "tailwindcss";
 
-/* EssayMentor AI design system variables */
+/* `dark:` follows the app theme (next-themes puts .dark on <html>), not the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains);
-
-  --color-primary-600: #4f46e5;
-  --color-primary-500: #6366f1;
-  --color-primary-400: #818cf8;
-  --color-primary-300: #a5b4fc;
-
-  --color-cyan-500: #06b6d4;
-  --color-cyan-400: #22d3ee;
-
-  --color-slate-900: #0f172a;
-  --color-slate-800: #1e293b;
-  --color-slate-700: #334155;
-  --color-slate-600: #475569;
-  --color-slate-500: #64748b;
-  --color-slate-400: #94a3b8;
-  --color-slate-300: #cbd5e1;
-  --color-slate-200: #e2e8f0;
-  --color-slate-100: #f1f5f9;
-  --color-slate-50: #f8fafc;
-
-  --color-card: var(--card);
-  --color-card-hover: var(--card-hover);
-  --color-border: var(--border);
-  --color-border-hover: var(--border-hover);
-
-  --color-anno-green: #10b981;
-  --color-anno-amber: #f59e0b;
-  --color-anno-red: #ef4444;
-  --color-anno-blue: #3b82f6;
-  --color-anno-purple: #8b5cf6;
-}
+/* ── Essay Staff design tokens ────────────────────────────────
+   Score paper and black ink. Severity is carried by line form and
+   fill pattern first; annotation hue sits on top of that, never alone. */
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --paper: #fbfbfa;
+  --surface: #ffffff;
+  --ink: #111111;
+  --ink-2: #45474b;
+  --ink-3: #66696e;
+  --rule: #dcdcd7;
+  --rule-strong: #111111;
+  --band: #e8e8e3;
+  --bar: #0b0b0c;
+  --on-bar: #f2f2f0;
+  --on-bar-2: #a9abaf;
+  --selection: #d8e2ff;
 
-  --card: #ffffff;
-  --card-hover: #f1f5f9;
-  --border: #e2e8f0;
-  --border-hover: #cbd5e1;
-  
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-bg-hover: #ffffff;
-  --glass-border: #e2e8f0;
-  --glass-border-hover: #cbd5e1;
-  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-  
-  --pill-bg: #f1f5f9;
-  --pill-bg-hover: #e2e8f0;
-  --pill-border: #cbd5e1;
-  --pill-text: #475569;
-  --pill-text-hover: #0f172a;
-  
-  --skeleton-bg: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 37%, rgba(0,0,0,0.04) 63%);
-  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+  --mark-strength: #12703f;
+  --mark-critical: #b42318;
+  --mark-suggestion: #9a5606;
+  --mark-structural: #1f4fd1;
+  --mark-tone: #6e3fc9;
+
+  color-scheme: light;
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #e2e8f0;
+  --paper: #0e0f10;
+  --surface: #16181a;
+  --ink: #f2f2f0;
+  --ink-2: #b4b6ba;
+  --ink-3: #8f9297;
+  --rule: #2e3033;
+  --rule-strong: #f2f2f0;
+  --band: #26282c;
+  --bar: #000000;
+  --on-bar: #f2f2f0;
+  --on-bar-2: #a3a5a9;
+  --selection: #2b3a66;
 
-  --card: rgba(255, 255, 255, 0.03);
-  --card-hover: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.14);
-  
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-bg-hover: rgba(255, 255, 255, 0.06);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-hover: rgba(255, 255, 255, 0.14);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  
-  --pill-bg: rgba(255, 255, 255, 0.03);
-  --pill-bg-hover: rgba(255, 255, 255, 0.06);
-  --pill-border: rgba(255, 255, 255, 0.08);
-  --pill-text: #94a3b8;
-  --pill-text-hover: #e2e8f0;
-  
-  --skeleton-bg: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 37%, rgba(255,255,255,0.03) 63%);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+  --mark-strength: #5fd394;
+  --mark-critical: #ff7a6b;
+  --mark-suggestion: #f2b04a;
+  --mark-structural: #8aaeff;
+  --mark-tone: #bda3ff;
+
+  color-scheme: dark;
 }
 
-/* ── Base ────────────────────────────────────────────── */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-band: var(--band);
+  --color-bar: var(--bar);
+  --color-on-bar: var(--on-bar);
+  --color-on-bar-2: var(--on-bar-2);
+
+  --color-mark-strength: var(--mark-strength);
+  --color-mark-critical: var(--mark-critical);
+  --color-mark-suggestion: var(--mark-suggestion);
+  --color-mark-structural: var(--mark-structural);
+  --color-mark-tone: var(--mark-tone);
+
+  --font-sans: var(--font-ui), system-ui, sans-serif;
+  --font-serif: var(--font-manuscript), Georgia, serif;
+  --font-display: var(--font-display-face), var(--font-ui), sans-serif;
+
+  --radius-sm: 3px;
+  --radius-md: 4px;
+}
+
+/* ── Base and browser surfaces ─────────────────────────────── */
+/* Layered (base < components < utilities) so Tailwind utilities on an
+   element can override these; unlayered rules would beat every utility. */
+
+@layer base {
+html {
+  background: var(--paper);
+}
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 0;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ── Background radial glow ──────────────────────────── */
-.bg-glow {
-  position: relative;
-}
-.bg-glow::before {
-  content: "";
-  position: fixed;
-  top: -20%;
-  left: -10%;
-  width: 60%;
-  height: 60%;
-  background: radial-gradient(ellipse, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-.bg-glow::after {
-  content: "";
-  position: fixed;
-  bottom: -20%;
-  right: -10%;
-  width: 50%;
-  height: 50%;
-  background: radial-gradient(ellipse, rgba(139, 92, 246, 0.06) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+::selection {
+  background: var(--selection);
+  color: var(--ink);
 }
 
-/* ── Glassmorphism card ──────────────────────────────── */
-.glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-}
-.glass-hover {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.glass-hover:hover {
-  background: var(--glass-bg-hover);
-  border-color: var(--glass-border-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--glass-shadow);
+input,
+textarea,
+select {
+  caret-color: var(--ink);
 }
 
-/* ── Gradient text ───────────────────────────────────── */
-.gradient-text {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6, #06b6d4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+:focus-visible {
+  outline: 2px solid var(--rule-strong);
+  outline-offset: 2px;
 }
 
-/* ── Gradient button ─────────────────────────────────── */
-.btn-gradient {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: white;
-  font-weight: 600;
-  border: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
-}
-.btn-gradient:hover {
-  box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
-  transform: translateY(-1px);
-}
-.btn-gradient:active {
-  transform: scale(0.97);
-}
-.btn-gradient:disabled {
-  opacity: 0.5;
-  pointer-events: none;
-  box-shadow: none;
+header :focus-visible {
+  outline-color: var(--on-bar);
 }
 
-/* ── Custom scrollbar (dark) ─────────────────────────── */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 999px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
+* {
+  scrollbar-color: var(--rule) transparent;
+  scrollbar-width: thin;
 }
 
-/* ── Skeleton shimmer (dark) ─────────────────────────── */
-@keyframes shimmer {
-  0% { background-position: -600px 0; }
-  100% { background-position: 600px 0; }
+a {
+  text-underline-offset: 3px;
 }
-.skeleton {
-  background: var(--skeleton-bg);
-  background-size: 600px 100%;
-  animation: shimmer 1.8s ease-in-out infinite;
-  border-radius: 8px;
 }
 
-/* ── Pulse dot (loading) ─────────────────────────────── */
-@keyframes pulse-dot {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
-}
-.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
-.pulse-dot:nth-child(2) { animation-delay: 0.2s; }
-.pulse-dot:nth-child(3) { animation-delay: 0.4s; }
-
-/* ── Score bar fill animation ────────────────────────── */
-@keyframes fill-bar {
-  from { width: 0%; }
-}
-.animate-fill {
-  animation: fill-bar 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Fade-in-up ──────────────────────────────────────── */
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in-up {
-  animation: fade-in-up 0.6s ease-out forwards;
-}
-
-/* ── Staggered children animation ────────────────────── */
-.stagger-children > * {
-  opacity: 0;
-  animation: fade-in-up 0.5s ease-out forwards;
-}
-.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
-.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
-.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
-.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
-.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
-.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
-.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
-.stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
-
-/* ── Radial score gauge ──────────────────────────────── */
-.score-ring {
-  --size: 120px;
-  --stroke: 8px;
-  width: var(--size);
-  height: var(--size);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.score-ring::before {
-  content: "";
+.sr-only-focusable:not(:focus) {
   position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  padding: var(--stroke);
-  background: conic-gradient(
-    var(--ring-color, #6366f1) calc(var(--progress, 0) * 1%),
-    var(--glass-border) 0
-  );
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  transition: --progress 0.8s ease-out;
-}
-
-/* ── Active nav link ─────────────────────────────────── */
-.nav-link {
-  position: relative;
-  transition: color 0.2s;
-}
-.nav-link::after {
-  content: "";
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  width: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #6366f1, #8b5cf6);
-  border-radius: 999px;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.nav-link:hover::after,
-.nav-link-active::after {
-  width: 100%;
-}
-.nav-link-active {
-  color: var(--color-primary-500);
-}
-
-/* ── Scholarship pill selector ───────────────────────── */
-.pill {
-  padding: 0.375rem 0.875rem;
-  border-radius: 9999px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border: 1px solid var(--pill-border);
-  background: var(--pill-bg);
-  color: var(--pill-text);
-  cursor: pointer;
-  transition: all 0.2s;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-.pill:hover {
-  background: var(--pill-bg-hover);
-  color: var(--pill-text-hover);
+
+@layer components {
+/* Tracked small-caps label — the score's marginal type. */
+.label {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
 }
-.pill-active {
-  background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2));
-  border-color: rgba(99, 102, 241, 0.4);
-  color: var(--color-primary-600);
+
+/* ── Controls ──────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+.btn:hover {
+  background: var(--band);
+}
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  border-color: var(--rule);
+  color: var(--ink-3);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+/* Primary carries the staff tick: a short bar just before its label. It is a
+   flex item, not pinned to the edge, so on full-width buttons it stays with
+   the centred label instead of floating at the far left like a caret. */
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn-primary::before {
+  content: "";
+  flex: none;
+  width: 2px;
+  height: 1em;
+  background: currentColor;
+  opacity: 0.55;
+}
+.btn-primary:hover {
+  background: var(--ink-2);
+}
+/* Primary on the dark bar (home closing band) */
+.btn-primary.btn-on-bar {
+  background: var(--on-bar);
+  color: var(--bar);
+  border-color: var(--on-bar);
+}
+.btn-primary.btn-on-bar:hover {
+  background: var(--on-bar-2);
+  border-color: var(--on-bar-2);
+}
+.btn-primary:disabled {
+  background: var(--band);
+  color: var(--ink-3);
+  border-color: var(--band);
+}
+
+.btn-quiet {
+  border-color: transparent;
+}
+
+.field {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+.field::placeholder {
+  color: var(--ink-3);
+}
+.field:hover {
+  border-color: var(--ink-3);
+}
+.field:focus-visible {
+  outline: 2px solid var(--rule-strong);
+  outline-offset: 0;
+  border-color: var(--rule-strong);
+}
+.field[aria-invalid="true"] {
+  border-color: var(--mark-critical);
+}
+
+select.field {
+  appearance: none;
+  padding-right: 2.25rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 52%, calc(100% - 12px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+}
+
+/* ── Notation: the five annotation marks ───────────────────── */
+/* In text: each type has its own underline form. */
+.mark {
+  text-decoration-line: underline;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 5px;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 200ms ease-out;
+}
+.mark-strength {
+  text-decoration-style: double;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--mark-strength);
+}
+.mark-critical {
+  text-decoration-style: solid;
+  text-decoration-thickness: 3px;
+  text-decoration-color: var(--mark-critical);
+}
+.mark-suggestion {
+  text-decoration-style: dashed;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--mark-suggestion);
+}
+.mark-structural {
+  text-decoration-style: dotted;
+  text-decoration-thickness: 2.5px;
+  text-decoration-color: var(--mark-structural);
+}
+.mark-tone {
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--mark-tone);
+}
+.mark:hover,
+.beat-active {
+  background: var(--band);
+  box-shadow: 0 0 0 3px var(--band);
+}
+
+/* On the staff: the same five types as fill patterns. */
+.glyph {
+  display: block;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+}
+.glyph-strength {
+  color: var(--mark-strength);
+  background: currentColor;
+}
+.glyph-critical {
+  color: var(--mark-critical);
+  background: currentColor;
+}
+.glyph-suggestion {
+  color: var(--mark-suggestion);
+  background: repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 4px);
+}
+.glyph-structural {
+  color: var(--mark-structural);
+  background: radial-gradient(currentColor 1px, transparent 1.3px) 0 0 / 4px 4px;
+}
+.glyph-tone {
+  color: var(--mark-tone);
+  background: transparent;
+  border-width: 2px;
+}
+.mark-label-strength { color: var(--mark-strength); }
+.mark-label-critical { color: var(--mark-critical); }
+.mark-label-suggestion { color: var(--mark-suggestion); }
+.mark-label-structural { color: var(--mark-structural); }
+.mark-label-tone { color: var(--mark-tone); }
+
+/* ── Motion: one authored moment — the staff rises into place. ─ */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pulse-bar {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.pulse-bar {
+  animation: pulse-bar 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,40 +1,47 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { dict, Language } from "../i18n/dictionaries";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { dict, type Dictionary, type Language } from "../i18n/dictionaries";
 
 type LanguageContextType = {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: typeof dict.id;
+  t: Dictionary;
 };
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<Language>("id");
+const STORAGE_KEY = "essaymentor-lang";
 
-  // Opsional: load preferensi dari localStorage
+export function LanguageProvider({ children }: { children: React.ReactNode }) {
+  const [language, setLanguageState] = useState<Language>("id");
+
   useEffect(() => {
-    const saved = localStorage.getItem("essaymentor-lang") as Language;
-    if (saved && (saved === "id" || saved === "en")) {
-      setLanguage(saved);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage after hydration
+      if (saved === "id" || saved === "en") setLanguageState(saved);
+    } catch {
+      // Storage blocked: stay on the default language.
     }
   }, []);
 
-  const handleSetLanguage = (lang: Language) => {
-    setLanguage(lang);
-    localStorage.setItem("essaymentor-lang", lang);
-  };
+  // Screen readers pronounce the page in the declared language (WCAG 3.1.1).
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
-  const contextValue = {
-    language,
-    setLanguage: handleSetLanguage,
-    t: dict[language],
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch {
+      // ignore
+    }
   };
 
   return (
-    <LanguageContext.Provider value={contextValue}>
+    <LanguageContext.Provider value={{ language, setLanguage, t: dict[language] }}>
       {children}
     </LanguageContext.Provider>
   );
